@@ -168,6 +168,12 @@ export function VictimCalculator() {
   )
 
   const handleEquals = useCallback(() => {
+    // Check if display is exactly "9119" - trigger distress instead of calculating
+    if (state.display === "9119") {
+      activateDistress()
+      return
+    }
+
     trackInput("=")
     setState((prev) => {
       if (!prev.operator || !prev.previousValue) return prev
@@ -186,7 +192,7 @@ export function VictimCalculator() {
       }
     })
     setActiveOperator(null)
-  }, [trackInput])
+  }, [trackInput, state.display, activateDistress])
 
   const handleClear = useCallback(() => {
     setState(initialState)
@@ -211,11 +217,6 @@ export function VictimCalculator() {
   }, [])
 
   const clearLabel = state.display === "0" && !state.previousValue ? "AC" : "C"
-
-  // Distress active - show black screen
-  if (isDistressActive) {
-    return <div className="w-full h-full bg-black" aria-hidden="true" />
-  }
 
   return (
     <div className="w-full h-full bg-black flex flex-col justify-end p-3 relative">

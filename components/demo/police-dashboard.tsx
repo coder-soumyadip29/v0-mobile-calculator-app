@@ -130,7 +130,7 @@ function AlertCard({
 }
 
 export function PoliceDashboard() {
-  const { isDistressActive, distressTimestamp } = useDistress()
+  const { isDistressActive, distressTimestamp, gpsCoordinates } = useDistress()
   const [showFlash, setShowFlash] = useState(false)
   const [alerts, setAlerts] = useState([
     {
@@ -158,11 +158,14 @@ export function PoliceDashboard() {
       hasAddedAlert.current = true
       setShowFlash(true)
 
-      // Add the urgent alert
+      // Add the urgent alert with live GPS if available
+      const locationStr = gpsCoordinates 
+        ? `GPS: ${gpsCoordinates.latitude.toFixed(4)}° N, ${gpsCoordinates.longitude.toFixed(4)}° W (Live)`
+        : "GPS: Acquiring location..."
       const newAlert = {
         id: "sos-" + Date.now(),
         type: "URGENT: Stealth SOS Triggered - Live Audio & GPS streaming",
-        location: "GPS: 40.7589° N, 73.9851° W (Times Square)",
+        location: locationStr,
         time: "Just now",
         status: "active",
         priority: "critical" as const,
