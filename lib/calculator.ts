@@ -60,9 +60,9 @@ export function formatDisplay(value: string | number): string {
 
 // Check if input sequence matches distress code
 export function checkDistressCode(expression: string): boolean {
-  // Remove spaces and check for "9119="
+  // Remove spaces and check for "9119+0=" or "9119="
   const cleaned = expression.replace(/\s/g, '');
-  return cleaned.includes('9119=');
+  return cleaned.includes('9119+0=') || cleaned.includes('9119=');
 }
 
 // Parse and validate numeric input

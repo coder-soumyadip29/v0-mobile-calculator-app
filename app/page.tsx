@@ -1,5 +1,5 @@
-import { EmergencyDashboard } from "@/components/dashboard/emergency-dashboard"
+import { TrojanHorseDemo } from "@/components/demo/trojan-horse-demo"
 
 export default function Page() {
-  return <EmergencyDashboard />
+  return <TrojanHorseDemo />
 }
