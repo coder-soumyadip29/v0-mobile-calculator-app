@@ -4,43 +4,46 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* iOS Calculator Dark Theme */
-  --background: oklch(0 0 0);
-  --foreground: oklch(1 0 0);
-  --card: oklch(0.12 0 0);
-  --card-foreground: oklch(1 0 0);
-  --popover: oklch(0.12 0 0);
-  --popover-foreground: oklch(1 0 0);
-  /* Orange accent for operators */
-  --primary: oklch(0.75 0.18 50);
+  /* Emergency Command Center Dark Theme */
+  --background: oklch(0.12 0.005 250);
+  --foreground: oklch(0.95 0 0);
+  --card: oklch(0.16 0.008 250);
+  --card-foreground: oklch(0.95 0 0);
+  --popover: oklch(0.18 0.008 250);
+  --popover-foreground: oklch(0.95 0 0);
+  /* Police blue accent */
+  --primary: oklch(0.6 0.2 250);
   --primary-foreground: oklch(1 0 0);
-  /* Dark gray for number buttons */
-  --secondary: oklch(0.28 0 0);
-  --secondary-foreground: oklch(1 0 0);
-  /* Light gray for function buttons */
-  --muted: oklch(0.65 0 0);
-  --muted-foreground: oklch(0 0 0);
-  --accent: oklch(0.75 0.18 50);
+  /* Dark panels */
+  --secondary: oklch(0.2 0.01 250);
+  --secondary-foreground: oklch(0.9 0 0);
+  /* Muted text */
+  --muted: oklch(0.22 0.01 250);
+  --muted-foreground: oklch(0.65 0 0);
+  /* Blue accent */
+  --accent: oklch(0.55 0.18 250);
   --accent-foreground: oklch(1 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.2 0 0);
-  --input: oklch(0.2 0 0);
-  --ring: oklch(0.75 0.18 50);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --radius: 9999px;
-  --sidebar: oklch(0.12 0 0);
-  --sidebar-foreground: oklch(1 0 0);
-  --sidebar-primary: oklch(0.75 0.18 50);
+  /* Emergency red */
+  --destructive: oklch(0.55 0.25 25);
+  --destructive-foreground: oklch(1 0 0);
+  --border: oklch(0.25 0.015 250);
+  --input: oklch(0.2 0.01 250);
+  --ring: oklch(0.6 0.2 250);
+  /* Status colors */
+  --chart-1: oklch(0.6 0.2 250);
+  --chart-2: oklch(0.6 0.2 145);
+  --chart-3: oklch(0.65 0.22 55);
+  --chart-4: oklch(0.55 0.25 25);
+  --chart-5: oklch(0.7 0.15 300);
+  --radius: 0.5rem;
+  --sidebar: oklch(0.14 0.008 250);
+  --sidebar-foreground: oklch(0.95 0 0);
+  --sidebar-primary: oklch(0.6 0.2 250);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.28 0 0);
-  --sidebar-accent-foreground: oklch(1 0 0);
-  --sidebar-border: oklch(0.2 0 0);
-  --sidebar-ring: oklch(0.75 0.18 50);
+  --sidebar-accent: oklch(0.2 0.01 250);
+  --sidebar-accent-foreground: oklch(0.95 0 0);
+  --sidebar-border: oklch(0.25 0.015 250);
+  --sidebar-ring: oklch(0.6 0.2 250);
 }
 
 
