@@ -1,7 +1,32 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { sendSOSAlert } from "./firebase"
+import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress } from "./firebase"
+
+// Reverse geocoding using OpenStreetMap Nominatim API
+async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+      {
+        headers: {
+          "User-Agent": "ProjectAegis-SOS-App/1.0"
+        }
+      }
+    )
+    if (!response.ok) {
+      console.error("[Geocode] API error:", response.status)
+      return null
+    }
+    const data = await response.json()
+    const address = data.display_name || null
+    console.log("[Geocode] Address:", address)
+    return address
+  } catch (error) {
+    console.error("[Geocode] Error:", error)
+    return null
+  }
+}
 
 interface DistressContextType {
   isDistressActive: boolean
@@ -37,103 +62,204 @@ export function DistressProvider({ children }: { children: ReactNode }) {
 
     let hasSentAlert = false
 
-    // GPS Sensor
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const { latitude, longitude } = position.coords
-          setGpsCoordinates({ latitude, longitude })
-          console.log(`[GPS] Latitude: ${latitude}, Longitude: ${longitude}`)
+    // Speech Recognition for Live Transcription
+    let recognition: SpeechRecognition | null = null
+    let currentAlertId: string | null = null
+
+    const startSpeechRecognition = async () => {
+      // Wait for alert to be created first
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Get the alert ID from the latest alert (set by GPS callback)
+      const SpeechRecognitionAPI = (window as Window & { 
+        SpeechRecognition?: typeof SpeechRecognition
+        webkitSpeechRecognition?: typeof SpeechRecognition 
+      }).SpeechRecognition || (window as Window & { 
+        SpeechRecognition?: typeof SpeechRecognition
+        webkitSpeechRecognition?: typeof SpeechRecognition 
+      }).webkitSpeechRecognition
+
+      if (SpeechRecognitionAPI) {
+        recognition = new SpeechRecognitionAPI()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "en-US"
+
+        let fullTranscript = ""
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let currentTranscript = ""
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i]
+            if (result.isFinal) {
+              fullTranscript += result[0].transcript + " "
+            } else {
+              currentTranscript += result[0].transcript
+            }
+          }
           
-          // Send alert to Firebase with GPS coordinates
-          if (!hasSentAlert) {
-            hasSentAlert = true
-            sendSOSAlert({
-              latitude,
-              longitude,
-              timestamp: new Date().toISOString(),
-              status: "active"
-            }).catch(console.error)
+          const transcriptToSend = fullTranscript + currentTranscript
+          console.log("[Speech] Transcript:", transcriptToSend)
+          
+          // Update Firebase with transcript
+          if (currentAlertId && transcriptToSend.trim()) {
+            updateSOSTranscript(currentAlertId, transcriptToSend.trim()).catch(console.error)
           }
-        },
-        (error) => {
-          console.error("[GPS] Permission denied or error:", error.message)
-          // Still send alert without GPS
-          if (!hasSentAlert) {
-            hasSentAlert = true
-            sendSOSAlert({
-              latitude: null,
-              longitude: null,
-              timestamp: new Date().toISOString(),
-              status: "active"
-            }).catch(console.error)
+        }
+
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error("[Speech] Error:", event.error)
+        }
+
+        recognition.onend = () => {
+          console.log("[Speech] Recognition ended")
+          // Restart if still in distress mode
+          if (recognition && isDistressActive) {
+            try {
+              recognition.start()
+              console.log("[Speech] Restarted recognition")
+            } catch {
+              console.log("[Speech] Could not restart")
+            }
           }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      )
-    } else {
-      console.error("[GPS] Geolocation not supported by this browser")
-      // Send alert without GPS
+        }
+
+        try {
+          recognition.start()
+          console.log("[Speech] Recognition started - speak now")
+        } catch (error) {
+          console.error("[Speech] Failed to start:", error)
+        }
+      } else {
+        console.log("[Speech] Speech recognition not supported in this browser")
+      }
+    }
+
+    // Live GPS Tracking with watchPosition
+    let watchId: number | null = null
+
+    const startLiveTracking = async () => {
+      if (!navigator.geolocation) {
+        console.error("[GPS] Geolocation not supported by this browser")
+        // Send alert without GPS
+        if (!hasSentAlert) {
+          hasSentAlert = true
+          currentAlertId = await sendSOSAlert({
+            latitude: null,
+            longitude: null,
+            timestamp: new Date().toISOString(),
+            status: "active"
+          })
+          startSpeechRecognition()
+        }
+        return
+      }
+
+      // First, create the initial alert document
       if (!hasSentAlert) {
         hasSentAlert = true
-        sendSOSAlert({
-          latitude: null,
-          longitude: null,
-          timestamp: new Date().toISOString(),
-          status: "active"
-        }).catch(console.error)
+        try {
+          // Get initial position first
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords
+              setGpsCoordinates({ latitude, longitude })
+              console.log(`[GPS] Initial position: ${latitude}, ${longitude}`)
+              
+              // Create the Firestore document with initial location
+              currentAlertId = await sendSOSAlert({
+                latitude,
+                longitude,
+                timestamp: new Date().toISOString(),
+                status: "active"
+              })
+              
+              // Fetch initial address via reverse geocoding
+              const address = await reverseGeocode(latitude, longitude)
+              if (currentAlertId && address) {
+                updateSOSAddress(currentAlertId, address).catch(console.error)
+              }
+              
+              // Start speech recognition after alert is created
+              startSpeechRecognition()
+              
+              // Now start continuous tracking with watchPosition
+              watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                  const { latitude: lat, longitude: lng } = pos.coords
+                  setGpsCoordinates({ latitude: lat, longitude: lng })
+                  console.log(`[GPS] Live update: ${lat}, ${lng}`)
+                  
+                  // Update the same Firestore document with new coordinates
+                  if (currentAlertId) {
+                    updateSOSLocation(currentAlertId, lat, lng).catch(console.error)
+                    
+                    // Update address via reverse geocoding (throttled to avoid rate limits)
+                    const address = await reverseGeocode(lat, lng)
+                    if (address) {
+                      updateSOSAddress(currentAlertId, address).catch(console.error)
+                    }
+                  }
+                },
+                (error) => {
+                  console.error("[GPS] Watch error:", error.message)
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              )
+              console.log("[GPS] Live tracking started with watchId:", watchId)
+            },
+            async (error) => {
+              console.error("[GPS] Initial position error:", error.message)
+              // Create alert without GPS, then start watching
+              currentAlertId = await sendSOSAlert({
+                latitude: null,
+                longitude: null,
+                timestamp: new Date().toISOString(),
+                status: "active"
+              })
+              startSpeechRecognition()
+              
+              // Try to start watching anyway
+              watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                  const { latitude: lat, longitude: lng } = pos.coords
+                  setGpsCoordinates({ latitude: lat, longitude: lng })
+                  console.log(`[GPS] Live update: ${lat}, ${lng}`)
+                  
+                  if (currentAlertId) {
+                    updateSOSLocation(currentAlertId, lat, lng).catch(console.error)
+                  }
+                },
+                (err) => console.error("[GPS] Watch error:", err.message),
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              )
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          )
+        } catch (error) {
+          console.error("[Firebase] Error creating alert:", error)
+        }
       }
     }
 
-    // Audio Recording
-    let mediaRecorder: MediaRecorder | null = null
-    let audioChunks: Blob[] = []
-
-    const startAudioRecording = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        mediaRecorder = new MediaRecorder(stream)
-        audioChunks = []
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data)
-          }
-        }
-
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
-          console.log(`[Audio] Recording captured successfully. Blob size: ${audioBlob.size} bytes`)
-          // Stop all tracks to release the microphone
-          stream.getTracks().forEach(track => track.stop())
-        }
-
-        mediaRecorder.start()
-        console.log("[Audio] Recording started...")
-
-        // Stop recording after 5 seconds for demo
-        setTimeout(() => {
-          if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop()
-            console.log("[Audio] Recording stopped after 5 seconds")
-          }
-        }, 5000)
-
-      } catch (error) {
-        if (error instanceof Error) {
-          console.error("[Audio] Permission denied or error:", error.message)
-        } else {
-          console.error("[Audio] Unknown error occurred")
-        }
-      }
-    }
-
-    startAudioRecording()
+    startLiveTracking()
 
     // Cleanup
     return () => {
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop()
+      // Stop GPS watching
+      if (watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId)
+        console.log("[GPS] Live tracking stopped")
+      }
+      
+      // Stop speech recognition
+      if (recognition) {
+        try {
+          recognition.stop()
+          console.log("[Speech] Recognition stopped on cleanup")
+        } catch {
+          // Ignore errors on cleanup
+        }
       }
     }
   }, [isDistressActive])

@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app"
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp } from "firebase/firestore"
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp, doc, updateDoc } from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: "AIzaSyC72k7ZhlWobsJ3zJcC2YkOhYfoQBQH89o",
@@ -19,18 +19,54 @@ export interface SOSAlert {
   longitude: number | null
   timestamp: string
   status: "active" | "responding" | "resolved"
+  transcript?: string
+  address?: string
 }
 
 export async function sendSOSAlert(alert: Omit<SOSAlert, "id">) {
   try {
     const docRef = await addDoc(collection(db, "alerts"), {
       ...alert,
+      transcript: "",
       createdAt: Timestamp.now()
     })
     console.log("[Firebase] SOS Alert sent with ID:", docRef.id)
     return docRef.id
   } catch (error) {
     console.error("[Firebase] Error sending SOS alert:", error)
+    throw error
+  }
+}
+
+export async function updateSOSTranscript(alertId: string, transcript: string) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { transcript })
+    console.log("[Firebase] Transcript updated for alert:", alertId)
+  } catch (error) {
+    console.error("[Firebase] Error updating transcript:", error)
+    throw error
+  }
+}
+
+export async function updateSOSLocation(alertId: string, latitude: number, longitude: number) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { latitude, longitude })
+    console.log(`[Firebase] Location updated: ${latitude}, ${longitude}`)
+  } catch (error) {
+    console.error("[Firebase] Error updating location:", error)
+    throw error
+  }
+}
+
+export async function updateSOSAddress(alertId: string, address: string) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { address })
+    console.log(`[Firebase] Address updated: ${address}`)
+  } catch (error) {
+    console.error("[Firebase] Error updating address:", error)
     throw error
   }
 }

@@ -17,21 +17,24 @@ import {
   Activity,
   Bell,
   Mic,
+  Terminal,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { subscribeToAlerts, type SOSAlert } from "@/lib/firebase"
 
 function LiveClock() {
-  const [time, setTime] = useState(new Date())
+  const [time, setTime] = useState<Date | null>(null)
 
   useEffect(() => {
+    // Set initial time only on client to avoid hydration mismatch
+    setTime(new Date())
     const interval = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
 
   return (
     <span className="font-mono text-sm text-slate-300">
-      {time.toLocaleTimeString("en-US", { hour12: false })}
+      {time ? time.toLocaleTimeString("en-US", { hour12: false }) : "--:--:--"}
     </span>
   )
 }
@@ -72,6 +75,7 @@ function AlertCard({
     status: string
     priority: "critical" | "high" | "medium"
     hasAudio?: boolean
+    hasLiveTracking?: boolean
   }
   isNew?: boolean
 }) {
@@ -99,7 +103,7 @@ function AlertCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span
               className={cn(
                 "text-xs px-2 py-0.5 rounded-full font-medium uppercase",
@@ -120,6 +124,13 @@ function AlertCard({
           <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
             <MapPin className="w-3 h-3" />
             {alert.location}
+            {/* Live Tracking Indicator */}
+            {alert.hasLiveTracking && (
+              <span className="flex items-center gap-1 ml-2 text-green-400">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-xs font-medium">LIVE TRACKING ACTIVE</span>
+              </span>
+            )}
           </p>
         </div>
         <span
@@ -148,6 +159,7 @@ export function PoliceDashboard() {
       time: "5 min ago",
       status: "active",
       priority: "high" as const,
+      hasLiveTracking: false,
     },
     {
       id: "2",
@@ -156,15 +168,39 @@ export function PoliceDashboard() {
       time: "12 min ago",
       status: "responding",
       priority: "medium" as const,
+      hasLiveTracking: false,
     },
   ])
   const processedAlertIds = useRef<Set<string>>(new Set())
   const [currentSOSCoords, setCurrentSOSCoords] = useState<{lat: number | null, lng: number | null} | null>(null)
+  const [activeTranscript, setActiveTranscript] = useState<string>("")
 
   // Subscribe to Firebase alerts
   useEffect(() => {
     const unsubscribe = subscribeToAlerts((alerts) => {
       setFirebaseAlerts(alerts)
+      
+      // Always update transcript from the most recent active alert
+      const activeAlert = alerts.find(a => a.status === "active")
+      if (activeAlert?.transcript) {
+        setActiveTranscript(activeAlert.transcript)
+      }
+      
+      // Always update coordinates from the most recent active alert (for live tracking)
+      if (activeAlert?.latitude && activeAlert?.longitude) {
+        setCurrentSOSCoords({ lat: activeAlert.latitude, lng: activeAlert.longitude })
+        
+        // Update the location string in localAlerts for this alert
+        setLocalAlerts((prev) => prev.map((localAlert) => {
+          if (localAlert.id === activeAlert.id) {
+            return {
+              ...localAlert,
+              location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`
+            }
+          }
+          return localAlert
+        }))
+      }
       
       // Check for new alerts
       alerts.forEach((alert) => {
@@ -180,6 +216,11 @@ export function PoliceDashboard() {
             setCurrentSOSCoords({ lat: alert.latitude, lng: alert.longitude })
           }
           
+          // Update transcript from active alert
+          if (alert.transcript) {
+            setActiveTranscript(alert.transcript)
+          }
+          
           // Create formatted alert for local display
           const locationStr = alert.latitude && alert.longitude
             ? `GPS: ${alert.latitude.toFixed(4)}° N, ${alert.longitude.toFixed(4)}° W`
@@ -193,6 +234,7 @@ export function PoliceDashboard() {
             status: "active",
             priority: "critical" as const,
             hasAudio: true,
+            hasLiveTracking: true,
           }
           
           setLocalAlerts((prev) => [formattedAlert, ...prev])
@@ -303,6 +345,48 @@ export function PoliceDashboard() {
                 isNew={i === 0 && alert.priority === "critical"}
               />
             ))}
+            
+            {/* Live Audio Transcript Terminal Box */}
+            <AnimatePresence>
+              {hasActiveSOSAlert && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="border border-green-500/30 rounded-lg overflow-hidden"
+                >
+                  {/* Terminal Header */}
+                  <div className="bg-green-900/30 px-3 py-2 flex items-center gap-2 border-b border-green-500/30">
+                    <Terminal className="w-4 h-4 text-green-400" />
+                    <span className="text-xs font-bold text-green-400 uppercase tracking-wider">
+                      Live Audio Transcript
+                    </span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      <span className="text-xs text-green-400">LIVE</span>
+                    </div>
+                  </div>
+                  
+                  {/* Terminal Body */}
+                  <div className="bg-black p-3 min-h-[120px] max-h-[200px] overflow-y-auto">
+                    <div className="font-mono text-sm text-green-400 leading-relaxed">
+                      {activeTranscript ? (
+                        <>
+                          <span className="text-green-600">{">"}</span>{" "}
+                          {activeTranscript}
+                          <span className="animate-pulse">_</span>
+                        </>
+                      ) : (
+                        <span className="text-green-600/50 italic">
+                          {">"} Listening for audio...
+                          <span className="animate-pulse">_</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </aside>
 
@@ -399,12 +483,20 @@ export function PoliceDashboard() {
                   <div className="w-3 h-3 bg-green-500 rounded-full" />
                 </div>
 
-                {/* SOS marker - only shows when alert is active */}
+                {/* SOS marker - position reacts to live coordinates */}
                 <AnimatePresence>
-                  {hasActiveSOSAlert && (
+                  {hasActiveSOSAlert && currentSOSCoords && (
                     <motion.div
                       initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
+                      animate={{ 
+                        scale: 1, 
+                        opacity: 1,
+                        // Simulate map position change based on coordinates
+                        // Map lat/lng to screen position (simplified for demo)
+                        x: ((currentSOSCoords.lng || 0) % 1) * 200 - 100,
+                        y: ((currentSOSCoords.lat || 0) % 1) * 200 - 100,
+                      }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
                       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
                     >
                       {/* Pulse rings */}
