@@ -1,7 +1,32 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { sendSOSAlert, updateSOSTranscript, updateSOSLocation } from "./firebase"
+import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress } from "./firebase"
+
+// Reverse geocoding using OpenStreetMap Nominatim API
+async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
+  try {
+    const response = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`,
+      {
+        headers: {
+          "User-Agent": "ProjectAegis-SOS-App/1.0"
+        }
+      }
+    )
+    if (!response.ok) {
+      console.error("[Geocode] API error:", response.status)
+      return null
+    }
+    const data = await response.json()
+    const address = data.display_name || null
+    console.log("[Geocode] Address:", address)
+    return address
+  } catch (error) {
+    console.error("[Geocode] Error:", error)
+    return null
+  }
+}
 
 interface DistressContextType {
   isDistressActive: boolean
@@ -149,6 +174,12 @@ export function DistressProvider({ children }: { children: ReactNode }) {
                 status: "active"
               })
               
+              // Fetch initial address via reverse geocoding
+              const address = await reverseGeocode(latitude, longitude)
+              if (currentAlertId && address) {
+                updateSOSAddress(currentAlertId, address).catch(console.error)
+              }
+              
               // Start speech recognition after alert is created
               startSpeechRecognition()
               
@@ -162,6 +193,12 @@ export function DistressProvider({ children }: { children: ReactNode }) {
                   // Update the same Firestore document with new coordinates
                   if (currentAlertId) {
                     updateSOSLocation(currentAlertId, lat, lng).catch(console.error)
+                    
+                    // Update address via reverse geocoding (throttled to avoid rate limits)
+                    const address = await reverseGeocode(lat, lng)
+                    if (address) {
+                      updateSOSAddress(currentAlertId, address).catch(console.error)
+                    }
                   }
                 },
                 (error) => {

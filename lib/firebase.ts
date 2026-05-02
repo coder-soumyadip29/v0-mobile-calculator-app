@@ -20,6 +20,7 @@ export interface SOSAlert {
   timestamp: string
   status: "active" | "responding" | "resolved"
   transcript?: string
+  address?: string
 }
 
 export async function sendSOSAlert(alert: Omit<SOSAlert, "id">) {
@@ -55,6 +56,17 @@ export async function updateSOSLocation(alertId: string, latitude: number, longi
     console.log(`[Firebase] Location updated: ${latitude}, ${longitude}`)
   } catch (error) {
     console.error("[Firebase] Error updating location:", error)
+    throw error
+  }
+}
+
+export async function updateSOSAddress(alertId: string, address: string) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { address })
+    console.log(`[Firebase] Address updated: ${address}`)
+  } catch (error) {
+    console.error("[Firebase] Error updating address:", error)
     throw error
   }
 }
