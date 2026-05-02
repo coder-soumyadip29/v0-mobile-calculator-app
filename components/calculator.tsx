@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback } from 'react';
-import { CalculatorButton } from './calculator-button';
-import { CalculatorDisplay } from './calculator-display';
+import { useState, useEffect, useCallback } from "react";
+import { CalculatorButton } from "./calculator-button";
+import { CalculatorDisplay } from "./calculator-display";
 import {
   CalculatorState,
   Operator,
@@ -10,7 +10,7 @@ import {
   calculate,
   isValidInput,
   checkDistressCode,
-} from '@/lib/calculator';
+} from "@/lib/calculator";
 
 interface CalculatorProps {
   onDistressActivate: () => void;
@@ -19,11 +19,11 @@ interface CalculatorProps {
 export function Calculator({ onDistressActivate }: CalculatorProps) {
   const [state, setState] = useState<CalculatorState>(initialState);
   const [activeOperator, setActiveOperator] = useState<Operator>(null);
-  const [inputHistory, setInputHistory] = useState<string>('');
+  const [inputHistory, setInputHistory] = useState<string>("");
 
   // Track input for distress code detection
   const trackInput = useCallback((input: string) => {
-    setInputHistory(prev => {
+    setInputHistory((prev) => {
       const newHistory = prev + input;
       // Keep only last 10 characters to save memory
       return newHistory.slice(-10);
@@ -34,79 +34,84 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
   useEffect(() => {
     if (checkDistressCode(inputHistory)) {
       onDistressActivate();
-      setInputHistory('');
+      setInputHistory("");
     }
   }, [inputHistory, onDistressActivate]);
 
   // Handle digit input
-  const handleDigit = useCallback((digit: string) => {
-    trackInput(digit);
-    
-    setState(prev => {
-      if (prev.waitingForOperand) {
+  const handleDigit = useCallback(
+    (digit: string) => {
+      trackInput(digit);
+
+      setState((prev) => {
+        if (prev.waitingForOperand) {
+          return {
+            ...prev,
+            display: digit,
+            waitingForOperand: false,
+          };
+        }
+
+        if (!isValidInput(prev.display, digit)) {
+          return prev;
+        }
+
+        const newDisplay =
+          prev.display === "0" && digit !== "." ? digit : prev.display + digit;
+
         return {
           ...prev,
-          display: digit,
-          waitingForOperand: false,
+          display: newDisplay,
         };
-      }
-
-      if (!isValidInput(prev.display, digit)) {
-        return prev;
-      }
-
-      const newDisplay = prev.display === '0' && digit !== '.'
-        ? digit
-        : prev.display + digit;
-
-      return {
-        ...prev,
-        display: newDisplay,
-      };
-    });
-  }, [trackInput]);
+      });
+    },
+    [trackInput],
+  );
 
   // Handle operator input
-  const handleOperator = useCallback((op: Operator) => {
-    trackInput(op || '');
-    
-    setState(prev => {
-      if (prev.previousValue && prev.operator && !prev.waitingForOperand) {
-        // Calculate intermediate result
-        const result = calculate(
-          parseFloat(prev.previousValue),
-          parseFloat(prev.display),
-          prev.operator
-        );
-        
-        const resultStr = isNaN(result) ? 'Error' : result.toString();
-        
+  const handleOperator = useCallback(
+    (op: Operator) => {
+      trackInput(op || "");
+
+      setState((prev) => {
+        if (prev.previousValue && prev.operator && !prev.waitingForOperand) {
+          // Calculate intermediate result
+          const result = calculate(
+            parseFloat(prev.previousValue),
+            parseFloat(prev.display),
+            prev.operator,
+          );
+
+          const resultStr = isNaN(result) ? "Error" : result.toString();
+
+          return {
+            display: resultStr,
+            previousValue: resultStr,
+            operator: op,
+            waitingForOperand: true,
+            expression: `${resultStr} ${op}`,
+          };
+        }
+
         return {
-          display: resultStr,
-          previousValue: resultStr,
+          ...prev,
+          previousValue: prev.display,
           operator: op,
           waitingForOperand: true,
-          expression: `${resultStr} ${op}`,
+          expression: `${prev.display} ${op}`,
         };
-      }
+      });
 
-      return {
-        ...prev,
-        previousValue: prev.display,
-        operator: op,
-        waitingForOperand: true,
-        expression: `${prev.display} ${op}`,
-      };
-    });
-    
-    setActiveOperator(op);
-  }, [trackInput]);
+      setActiveOperator(op);
+    },
+    [trackInput],
+  );
 
   // Handle equals
   const handleEquals = useCallback(() => {
-    trackInput('=');
-    
-    setState(prev => {
+    trackInput("=");
+
+    setState((prev) => {
       if (!prev.operator || !prev.previousValue) {
         return prev;
       }
@@ -114,20 +119,20 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
       const result = calculate(
         parseFloat(prev.previousValue),
         parseFloat(prev.display),
-        prev.operator
+        prev.operator,
       );
 
-      const resultStr = isNaN(result) ? 'Error' : result.toString();
+      const resultStr = isNaN(result) ? "Error" : result.toString();
 
       return {
         display: resultStr,
-        previousValue: '',
+        previousValue: "",
         operator: null,
         waitingForOperand: true,
-        expression: '',
+        expression: "",
       };
     });
-    
+
     setActiveOperator(null);
   }, [trackInput]);
 
@@ -140,15 +145,15 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
   const handleClear = useCallback(() => {
     setState(initialState);
     setActiveOperator(null);
-    setInputHistory('');
+    setInputHistory("");
   }, []);
 
   // Handle toggle sign (+/-)
   const handleToggleSign = useCallback(() => {
-    setState(prev => {
+    setState((prev) => {
       const value = parseFloat(prev.display);
       if (isNaN(value)) return prev;
-      
+
       return {
         ...prev,
         display: (value * -1).toString(),
@@ -158,10 +163,10 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
 
   // Handle percentage
   const handlePercent = useCallback(() => {
-    setState(prev => {
+    setState((prev) => {
       const value = parseFloat(prev.display);
       if (isNaN(value)) return prev;
-      
+
       return {
         ...prev,
         display: (value / 100).toString(),
@@ -171,11 +176,11 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
 
   // Handle delete last digit
   const handleDelete = useCallback(() => {
-    setState(prev => {
-      if (prev.display.length <= 1 || prev.display === '0') {
-        return { ...prev, display: '0' };
+    setState((prev) => {
+      if (prev.display.length <= 1 || prev.display === "0") {
+        return { ...prev, display: "0" };
       }
-      
+
       return {
         ...prev,
         display: prev.display.slice(0, -1),
@@ -184,15 +189,15 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
   }, []);
 
   // Determine if AC or C should be shown
-  const clearLabel = state.display === '0' && !state.previousValue ? 'AC' : 'C';
+  const clearLabel = state.display === "0" && !state.previousValue ? "AC" : "C";
 
   return (
-    <div className="w-full max-w-sm mx-auto flex flex-col gap-3 p-4">
+    <div className="w-full max-w-[340px] mx-auto flex flex-col gap-5 p-6">
       {/* Display */}
-      <CalculatorDisplay value={state.display} />
+      <CalculatorDisplay value={state.display} expression={state.expression} />
 
       {/* Button Grid */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-4 gap-5">
         {/* Row 1: AC, +/-, %, ÷ */}
         <CalculatorButton
           label={clearLabel}
@@ -211,90 +216,90 @@ export function Calculator({ onDistressActivate }: CalculatorProps) {
         />
         <CalculatorButton
           label="÷"
-          onClick={() => handleOperator('÷')}
+          onClick={() => handleOperator("÷")}
           variant="operator"
-          isActive={activeOperator === '÷'}
+          isActive={activeOperator === "÷"}
         />
 
         {/* Row 2: 7, 8, 9, × */}
         <CalculatorButton
           label="7"
-          onClick={() => handleDigit('7')}
+          onClick={() => handleDigit("7")}
           variant="number"
         />
         <CalculatorButton
           label="8"
-          onClick={() => handleDigit('8')}
+          onClick={() => handleDigit("8")}
           variant="number"
         />
         <CalculatorButton
           label="9"
-          onClick={() => handleDigit('9')}
+          onClick={() => handleDigit("9")}
           variant="number"
         />
         <CalculatorButton
           label="×"
-          onClick={() => handleOperator('×')}
+          onClick={() => handleOperator("×")}
           variant="operator"
-          isActive={activeOperator === '×'}
+          isActive={activeOperator === "×"}
         />
 
         {/* Row 3: 4, 5, 6, - */}
         <CalculatorButton
           label="4"
-          onClick={() => handleDigit('4')}
+          onClick={() => handleDigit("4")}
           variant="number"
         />
         <CalculatorButton
           label="5"
-          onClick={() => handleDigit('5')}
+          onClick={() => handleDigit("5")}
           variant="number"
         />
         <CalculatorButton
           label="6"
-          onClick={() => handleDigit('6')}
+          onClick={() => handleDigit("6")}
           variant="number"
         />
         <CalculatorButton
           label="−"
-          onClick={() => handleOperator('-')}
+          onClick={() => handleOperator("-")}
           variant="operator"
-          isActive={activeOperator === '-'}
+          isActive={activeOperator === "-"}
         />
 
         {/* Row 4: 1, 2, 3, + */}
         <CalculatorButton
           label="1"
-          onClick={() => handleDigit('1')}
+          onClick={() => handleDigit("1")}
           variant="number"
         />
         <CalculatorButton
           label="2"
-          onClick={() => handleDigit('2')}
+          onClick={() => handleDigit("2")}
           variant="number"
         />
         <CalculatorButton
           label="3"
-          onClick={() => handleDigit('3')}
+          onClick={() => handleDigit("3")}
           variant="number"
         />
         <CalculatorButton
           label="+"
-          onClick={() => handleOperator('+')}
+          onClick={() => handleOperator("+")}
           variant="operator"
-          isActive={activeOperator === '+'}
+          isActive={activeOperator === "+"}
         />
 
         {/* Row 5: 0 (wide), ., = */}
         <CalculatorButton
           label="0"
-          onClick={() => handleDigit('0')}
+          onClick={() => handleDigit("0")}
           variant="number"
           isWide
         />
         <CalculatorButton
           label="."
-          onClick={() => handleDigit('.')}
+          onClick={() => handleDigit(".")}
           variant="number"
         />
         <CalculatorButton

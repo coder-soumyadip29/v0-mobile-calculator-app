@@ -1,13 +1,13 @@
-'use client';
+"use client";
 
-import { useRef, useCallback } from 'react';
-import { cn } from '@/lib/utils';
+import { useRef, useCallback } from "react";
+import { cn } from "@/lib/utils";
 
 interface CalculatorButtonProps {
   label: string;
   onClick: () => void;
   onLongPress?: () => void;
-  variant: 'number' | 'function' | 'operator';
+  variant: "number" | "function" | "operator";
   isWide?: boolean;
   isActive?: boolean;
   disabled?: boolean;
@@ -28,7 +28,7 @@ export function CalculatorButton({
   // Handle long press detection (2 seconds)
   const handleTouchStart = useCallback(() => {
     if (!onLongPress || disabled) return;
-    
+
     isLongPressRef.current = false;
     timerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
@@ -41,7 +41,7 @@ export function CalculatorButton({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    
+
     // Only trigger onClick if it wasn't a long press
     if (!isLongPressRef.current && !disabled) {
       onClick();
@@ -66,7 +66,7 @@ export function CalculatorButton({
   // Mouse events for desktop long press
   const handleMouseDown = useCallback(() => {
     if (!onLongPress || disabled) return;
-    
+
     isLongPressRef.current = false;
     timerRef.current = setTimeout(() => {
       isLongPressRef.current = true;
@@ -79,7 +79,7 @@ export function CalculatorButton({
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    
+
     if (!isLongPressRef.current && !disabled && onLongPress) {
       onClick();
     }
@@ -96,29 +96,28 @@ export function CalculatorButton({
 
   // Base styles
   const baseStyles = cn(
-    'flex items-center justify-center font-sans text-3xl font-medium',
-    'transition-all duration-150 ease-out select-none',
-    'active:scale-95 active:brightness-125',
-    'hover:brightness-110',
-    'touch-manipulation',
-    isWide ? 'col-span-2 w-full rounded-full' : 'aspect-square rounded-full',
-    disabled && 'pointer-events-none'
+    "flex items-center justify-center font-sans text-3xl font-medium",
+    "transition-all duration-150 ease-out select-none",
+    "active:scale-95 active:brightness-125",
+    "hover:brightness-110",
+    "touch-manipulation",
+    isWide
+      ? "col-span-2 w-[96%] justify-self-center rounded-full h-[4.5rem]"
+      : "w-[92%] justify-self-center aspect-square rounded-full",
+    disabled && "pointer-events-none",
   );
 
   // Variant-specific styles
   const variantStyles = {
     number: cn(
-      'bg-secondary text-secondary-foreground',
-      isActive && 'brightness-125'
+      "bg-secondary text-secondary-foreground",
+      isActive && "brightness-125",
     ),
-    function: cn(
-      'bg-muted text-muted-foreground',
-      isActive && 'brightness-90'
-    ),
+    function: cn("bg-muted text-muted-foreground", isActive && "brightness-90"),
     operator: cn(
-      isActive 
-        ? 'bg-foreground text-primary' 
-        : 'bg-primary text-primary-foreground'
+      isActive
+        ? "bg-foreground text-primary"
+        : "bg-primary text-primary-foreground",
     ),
   };
 
@@ -136,11 +135,7 @@ export function CalculatorButton({
       disabled={disabled}
       aria-label={label}
     >
-      {isWide ? (
-        <span className="pl-6 text-left w-full">{label}</span>
-      ) : (
-        label
-      )}
+      {isWide ? <span className="pl-7 text-left w-full">{label}</span> : label}
     </button>
   );
 }

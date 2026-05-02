@@ -1,34 +1,34 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
+@import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Emergency Command Center Dark Theme */
-  --background: oklch(0.12 0.005 250);
+  /* Calculator Dark Theme */
+  --background: oklch(0.15 0.005 250);
   --foreground: oklch(0.95 0 0);
-  --card: oklch(0.16 0.008 250);
+  --card: oklch(0.18 0.008 250);
   --card-foreground: oklch(0.95 0 0);
-  --popover: oklch(0.18 0.008 250);
+  --popover: oklch(0.2 0.008 250);
   --popover-foreground: oklch(0.95 0 0);
-  /* Police blue accent */
-  --primary: oklch(0.6 0.2 250);
+  /* Orange/Warm accent for operators */
+  --primary: oklch(0.65 0.25 55);
   --primary-foreground: oklch(1 0 0);
-  /* Dark panels */
-  --secondary: oklch(0.2 0.01 250);
+  /* Dark gray for buttons */
+  --secondary: oklch(0.25 0.01 250);
   --secondary-foreground: oklch(0.9 0 0);
   /* Muted text */
-  --muted: oklch(0.22 0.01 250);
+  --muted: oklch(0.28 0.01 250);
   --muted-foreground: oklch(0.65 0 0);
-  /* Blue accent */
-  --accent: oklch(0.55 0.18 250);
+  /* Light accent */
+  --accent: oklch(0.65 0.25 55);
   --accent-foreground: oklch(1 0 0);
   /* Emergency red */
   --destructive: oklch(0.55 0.25 25);
   --destructive-foreground: oklch(1 0 0);
   --border: oklch(0.25 0.015 250);
-  --input: oklch(0.2 0.01 250);
-  --ring: oklch(0.6 0.2 250);
+  --input: oklch(0.25 0.01 250);
+  --ring: oklch(0.65 0.25 55);
   /* Status colors */
   --chart-1: oklch(0.6 0.2 250);
   --chart-2: oklch(0.6 0.2 145);
@@ -38,19 +38,17 @@
   --radius: 0.5rem;
   --sidebar: oklch(0.14 0.008 250);
   --sidebar-foreground: oklch(0.95 0 0);
-  --sidebar-primary: oklch(0.6 0.2 250);
+  --sidebar-primary: oklch(0.65 0.25 55);
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.2 0.01 250);
+  --sidebar-accent: oklch(0.28 0.01 250);
   --sidebar-accent-foreground: oklch(0.95 0 0);
   --sidebar-border: oklch(0.25 0.015 250);
-  --sidebar-ring: oklch(0.6 0.2 250);
+  --sidebar-ring: oklch(0.65 0.25 55);
 }
 
-
-
 @theme inline {
-  --font-sans: 'Geist', 'Geist Fallback';
-  --font-mono: 'Geist Mono', 'Geist Mono Fallback';
+  --font-sans: "Geist", "Geist Fallback";
+  --font-mono: "Geist Mono", "Geist Mono Fallback";
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
