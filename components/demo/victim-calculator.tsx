@@ -102,6 +102,17 @@ function CalcDisplay({ value }: { value: string }) {
   )
 }
 
+function BlackoutScreen() {
+  return (
+    <div 
+      className="absolute inset-0 bg-black z-[9999] flex items-center justify-center"
+      aria-hidden="true"
+    >
+      {/* Completely black - simulates dead/off phone */}
+    </div>
+  )
+}
+
 export function VictimCalculator() {
   const { isDistressActive, activateDistress } = useDistress()
   const [state, setState] = useState<CalculatorState>(initialState)
@@ -217,6 +228,11 @@ export function VictimCalculator() {
   }, [])
 
   const clearLabel = state.display === "0" && !state.previousValue ? "AC" : "C"
+
+  // If distress is active, show blackout (dead phone look)
+  if (isDistressActive) {
+    return <BlackoutScreen />
+  }
 
   return (
     <div className="w-full h-full bg-black flex flex-col justify-end p-3 relative">
