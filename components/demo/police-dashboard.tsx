@@ -17,6 +17,7 @@ import {
   Activity,
   Bell,
   Mic,
+  Terminal,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { subscribeToAlerts, type SOSAlert } from "@/lib/firebase"
@@ -162,11 +163,18 @@ export function PoliceDashboard() {
   ])
   const processedAlertIds = useRef<Set<string>>(new Set())
   const [currentSOSCoords, setCurrentSOSCoords] = useState<{lat: number | null, lng: number | null} | null>(null)
+  const [activeTranscript, setActiveTranscript] = useState<string>("")
 
   // Subscribe to Firebase alerts
   useEffect(() => {
     const unsubscribe = subscribeToAlerts((alerts) => {
       setFirebaseAlerts(alerts)
+      
+      // Always update transcript from the most recent active alert
+      const activeAlert = alerts.find(a => a.status === "active")
+      if (activeAlert?.transcript) {
+        setActiveTranscript(activeAlert.transcript)
+      }
       
       // Check for new alerts
       alerts.forEach((alert) => {
@@ -180,6 +188,11 @@ export function PoliceDashboard() {
           // Update current SOS coordinates
           if (alert.latitude && alert.longitude) {
             setCurrentSOSCoords({ lat: alert.latitude, lng: alert.longitude })
+          }
+          
+          // Update transcript from active alert
+          if (alert.transcript) {
+            setActiveTranscript(alert.transcript)
           }
           
           // Create formatted alert for local display
@@ -305,6 +318,48 @@ export function PoliceDashboard() {
                 isNew={i === 0 && alert.priority === "critical"}
               />
             ))}
+            
+            {/* Live Audio Transcript Terminal Box */}
+            <AnimatePresence>
+              {hasActiveSOSAlert && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="border border-green-500/30 rounded-lg overflow-hidden"
+                >
+                  {/* Terminal Header */}
+                  <div className="bg-green-900/30 px-3 py-2 flex items-center gap-2 border-b border-green-500/30">
+                    <Terminal className="w-4 h-4 text-green-400" />
+                    <span className="text-xs font-bold text-green-400 uppercase tracking-wider">
+                      Live Audio Transcript
+                    </span>
+                    <div className="ml-auto flex items-center gap-1">
+                      <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                      <span className="text-xs text-green-400">LIVE</span>
+                    </div>
+                  </div>
+                  
+                  {/* Terminal Body */}
+                  <div className="bg-black p-3 min-h-[120px] max-h-[200px] overflow-y-auto">
+                    <div className="font-mono text-sm text-green-400 leading-relaxed">
+                      {activeTranscript ? (
+                        <>
+                          <span className="text-green-600">{">"}</span>{" "}
+                          {activeTranscript}
+                          <span className="animate-pulse">_</span>
+                        </>
+                      ) : (
+                        <span className="text-green-600/50 italic">
+                          {">"} Listening for audio...
+                          <span className="animate-pulse">_</span>
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </aside>
 

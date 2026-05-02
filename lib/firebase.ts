@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app"
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp } from "firebase/firestore"
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp, doc, updateDoc } from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: "AIzaSyC72k7ZhlWobsJ3zJcC2YkOhYfoQBQH89o",
@@ -19,18 +19,31 @@ export interface SOSAlert {
   longitude: number | null
   timestamp: string
   status: "active" | "responding" | "resolved"
+  transcript?: string
 }
 
 export async function sendSOSAlert(alert: Omit<SOSAlert, "id">) {
   try {
     const docRef = await addDoc(collection(db, "alerts"), {
       ...alert,
+      transcript: "",
       createdAt: Timestamp.now()
     })
     console.log("[Firebase] SOS Alert sent with ID:", docRef.id)
     return docRef.id
   } catch (error) {
     console.error("[Firebase] Error sending SOS alert:", error)
+    throw error
+  }
+}
+
+export async function updateSOSTranscript(alertId: string, transcript: string) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { transcript })
+    console.log("[Firebase] Transcript updated for alert:", alertId)
+  } catch (error) {
+    console.error("[Firebase] Error updating transcript:", error)
     throw error
   }
 }

@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { sendSOSAlert } from "./firebase"
+import { sendSOSAlert, updateSOSTranscript } from "./firebase"
 
 interface DistressContextType {
   isDistressActive: boolean
@@ -37,10 +37,83 @@ export function DistressProvider({ children }: { children: ReactNode }) {
 
     let hasSentAlert = false
 
-    // GPS Sensor
+    // Speech Recognition for Live Transcription
+    let recognition: SpeechRecognition | null = null
+    let currentAlertId: string | null = null
+
+    const startSpeechRecognition = async () => {
+      // Wait for alert to be created first
+      await new Promise(resolve => setTimeout(resolve, 500))
+      
+      // Get the alert ID from the latest alert (set by GPS callback)
+      const SpeechRecognitionAPI = (window as Window & { 
+        SpeechRecognition?: typeof SpeechRecognition
+        webkitSpeechRecognition?: typeof SpeechRecognition 
+      }).SpeechRecognition || (window as Window & { 
+        SpeechRecognition?: typeof SpeechRecognition
+        webkitSpeechRecognition?: typeof SpeechRecognition 
+      }).webkitSpeechRecognition
+
+      if (SpeechRecognitionAPI) {
+        recognition = new SpeechRecognitionAPI()
+        recognition.continuous = true
+        recognition.interimResults = true
+        recognition.lang = "en-US"
+
+        let fullTranscript = ""
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let currentTranscript = ""
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i]
+            if (result.isFinal) {
+              fullTranscript += result[0].transcript + " "
+            } else {
+              currentTranscript += result[0].transcript
+            }
+          }
+          
+          const transcriptToSend = fullTranscript + currentTranscript
+          console.log("[Speech] Transcript:", transcriptToSend)
+          
+          // Update Firebase with transcript
+          if (currentAlertId && transcriptToSend.trim()) {
+            updateSOSTranscript(currentAlertId, transcriptToSend.trim()).catch(console.error)
+          }
+        }
+
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error("[Speech] Error:", event.error)
+        }
+
+        recognition.onend = () => {
+          console.log("[Speech] Recognition ended")
+          // Restart if still in distress mode
+          if (recognition && isDistressActive) {
+            try {
+              recognition.start()
+              console.log("[Speech] Restarted recognition")
+            } catch {
+              console.log("[Speech] Could not restart")
+            }
+          }
+        }
+
+        try {
+          recognition.start()
+          console.log("[Speech] Recognition started - speak now")
+        } catch (error) {
+          console.error("[Speech] Failed to start:", error)
+        }
+      } else {
+        console.log("[Speech] Speech recognition not supported in this browser")
+      }
+    }
+
+    // Modify GPS callback to store alert ID
     if (navigator.geolocation) {
       navigator.geolocation.getCurrentPosition(
-        (position) => {
+        async (position) => {
           const { latitude, longitude } = position.coords
           setGpsCoordinates({ latitude, longitude })
           console.log(`[GPS] Latitude: ${latitude}, Longitude: ${longitude}`)
@@ -48,25 +121,37 @@ export function DistressProvider({ children }: { children: ReactNode }) {
           // Send alert to Firebase with GPS coordinates
           if (!hasSentAlert) {
             hasSentAlert = true
-            sendSOSAlert({
-              latitude,
-              longitude,
-              timestamp: new Date().toISOString(),
-              status: "active"
-            }).catch(console.error)
+            try {
+              currentAlertId = await sendSOSAlert({
+                latitude,
+                longitude,
+                timestamp: new Date().toISOString(),
+                status: "active"
+              })
+              // Start speech recognition after alert is created
+              startSpeechRecognition()
+            } catch (error) {
+              console.error("[Firebase] Error:", error)
+            }
           }
         },
-        (error) => {
+        async (error) => {
           console.error("[GPS] Permission denied or error:", error.message)
           // Still send alert without GPS
           if (!hasSentAlert) {
             hasSentAlert = true
-            sendSOSAlert({
-              latitude: null,
-              longitude: null,
-              timestamp: new Date().toISOString(),
-              status: "active"
-            }).catch(console.error)
+            try {
+              currentAlertId = await sendSOSAlert({
+                latitude: null,
+                longitude: null,
+                timestamp: new Date().toISOString(),
+                status: "active"
+              })
+              // Start speech recognition after alert is created
+              startSpeechRecognition()
+            } catch (error) {
+              console.error("[Firebase] Error:", error)
+            }
           }
         },
         { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
@@ -81,59 +166,22 @@ export function DistressProvider({ children }: { children: ReactNode }) {
           longitude: null,
           timestamp: new Date().toISOString(),
           status: "active"
+        }).then(id => {
+          currentAlertId = id
+          startSpeechRecognition()
         }).catch(console.error)
       }
     }
 
-    // Audio Recording
-    let mediaRecorder: MediaRecorder | null = null
-    let audioChunks: Blob[] = []
-
-    const startAudioRecording = async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        mediaRecorder = new MediaRecorder(stream)
-        audioChunks = []
-
-        mediaRecorder.ondataavailable = (event) => {
-          if (event.data.size > 0) {
-            audioChunks.push(event.data)
-          }
-        }
-
-        mediaRecorder.onstop = () => {
-          const audioBlob = new Blob(audioChunks, { type: "audio/webm" })
-          console.log(`[Audio] Recording captured successfully. Blob size: ${audioBlob.size} bytes`)
-          // Stop all tracks to release the microphone
-          stream.getTracks().forEach(track => track.stop())
-        }
-
-        mediaRecorder.start()
-        console.log("[Audio] Recording started...")
-
-        // Stop recording after 5 seconds for demo
-        setTimeout(() => {
-          if (mediaRecorder && mediaRecorder.state === "recording") {
-            mediaRecorder.stop()
-            console.log("[Audio] Recording stopped after 5 seconds")
-          }
-        }, 5000)
-
-      } catch (error) {
-        if (error instanceof Error) {
-          console.error("[Audio] Permission denied or error:", error.message)
-        } else {
-          console.error("[Audio] Unknown error occurred")
-        }
-      }
-    }
-
-    startAudioRecording()
-
     // Cleanup
     return () => {
-      if (mediaRecorder && mediaRecorder.state === "recording") {
-        mediaRecorder.stop()
+      if (recognition) {
+        try {
+          recognition.stop()
+          console.log("[Speech] Recognition stopped on cleanup")
+        } catch {
+          // Ignore errors on cleanup
+        }
       }
     }
   }, [isDistressActive])
