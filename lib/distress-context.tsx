@@ -1,11 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-<<<<<<< HEAD
 import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress, updateSOSImage } from "./firebase"
-=======
-import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress } from "./firebase"
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
 
 // Reverse geocoding using OpenStreetMap Nominatim API
 async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
@@ -96,11 +92,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i]
             if (result.isFinal) {
-<<<<<<< HEAD
               fullTranscript += result[0].transcript.trim() + ". "
-=======
-              fullTranscript += result[0].transcript + " "
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
             } else {
               currentTranscript += result[0].transcript
             }
@@ -143,7 +135,6 @@ export function DistressProvider({ children }: { children: ReactNode }) {
       }
     }
 
-<<<<<<< HEAD
     const startVisualEvidenceCapture = async () => {
       // Wait for alert to be created
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -194,9 +185,6 @@ export function DistressProvider({ children }: { children: ReactNode }) {
         // Fail gracefully without breaking distress flow
       }
     }
-
-=======
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
     // Live GPS Tracking with watchPosition
     let watchId: number | null = null
 
@@ -213,10 +201,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
             status: "active"
           })
           startSpeechRecognition()
-<<<<<<< HEAD
           startVisualEvidenceCapture()
-=======
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
         }
         return
       }
@@ -246,14 +231,9 @@ export function DistressProvider({ children }: { children: ReactNode }) {
                 updateSOSAddress(currentAlertId, address).catch(console.error)
               }
               
-<<<<<<< HEAD
               // Start speech recognition and visual capture after alert is created
               startSpeechRecognition()
               startVisualEvidenceCapture()
-=======
-              // Start speech recognition after alert is created
-              startSpeechRecognition()
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
               
               // Now start continuous tracking with watchPosition
               watchId = navigator.geolocation.watchPosition(
@@ -290,10 +270,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
                 status: "active"
               })
               startSpeechRecognition()
-<<<<<<< HEAD
               startVisualEvidenceCapture()
-=======
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
               
               // Try to start watching anyway
               watchId = navigator.geolocation.watchPosition(

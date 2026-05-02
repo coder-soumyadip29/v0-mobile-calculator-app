@@ -21,11 +21,8 @@ export interface SOSAlert {
   status: "active" | "responding" | "resolved"
   transcript?: string
   address?: string
-<<<<<<< HEAD
   latestImage?: string
   lastImageCapturedAt?: any
-=======
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
 }
 
 export async function sendSOSAlert(alert: Omit<SOSAlert, "id">) {
@@ -76,7 +73,6 @@ export async function updateSOSAddress(alertId: string, address: string) {
   }
 }
 
-<<<<<<< HEAD
 export async function updateSOSImage(alertId: string, base64Image: string) {
   try {
     const alertRef = doc(db, "alerts", alertId)
@@ -90,9 +86,6 @@ export async function updateSOSImage(alertId: string, base64Image: string) {
     throw error
   }
 }
-
-=======
->>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
 export function subscribeToAlerts(callback: (alerts: SOSAlert[]) => void) {
   const alertsQuery = query(
     collection(db, "alerts"),
