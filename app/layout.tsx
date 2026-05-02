@@ -7,8 +7,8 @@ const _geist = Geist({ subsets: ["latin"] });
 const _geistMono = Geist_Mono({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: 'Trojan-Horse SOS Demo',
-  description: 'Stealth emergency SOS system demonstration',
+  title: 'Project Aegis - Trojan-Horse SOS System',
+  description: 'A stealth emergency SOS system disguised as a calculator for covert distress signaling',
   generator: 'v0.app',
   icons: {
     icon: [

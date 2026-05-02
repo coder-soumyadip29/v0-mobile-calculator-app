@@ -16,9 +16,10 @@ import {
   Zap,
   Activity,
   Bell,
+  Mic,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useDistress } from "@/lib/distress-context"
+import { subscribeToAlerts, type SOSAlert } from "@/lib/firebase"
 
 function LiveClock() {
   const [time, setTime] = useState(new Date())
@@ -70,6 +71,7 @@ function AlertCard({
     time: string
     status: string
     priority: "critical" | "high" | "medium"
+    hasAudio?: boolean
   }
   isNew?: boolean
 }) {
@@ -107,6 +109,12 @@ function AlertCard({
               {alert.priority}
             </span>
             <span className="text-xs text-slate-400">{alert.time}</span>
+            {alert.hasAudio && (
+              <span className="flex items-center gap-1 text-xs text-red-400">
+                <Mic className="w-3 h-3 animate-pulse" />
+                LIVE
+              </span>
+            )}
           </div>
           <h4 className="text-sm font-semibold text-white">{alert.type}</h4>
           <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
@@ -130,9 +138,9 @@ function AlertCard({
 }
 
 export function PoliceDashboard() {
-  const { isDistressActive, distressTimestamp, gpsCoordinates } = useDistress()
   const [showFlash, setShowFlash] = useState(false)
-  const [alerts, setAlerts] = useState([
+  const [firebaseAlerts, setFirebaseAlerts] = useState<SOSAlert[]>([])
+  const [localAlerts, setLocalAlerts] = useState([
     {
       id: "1",
       type: "Domestic Disturbance",
@@ -150,39 +158,52 @@ export function PoliceDashboard() {
       priority: "medium" as const,
     },
   ])
-  const hasAddedAlert = useRef(false)
+  const processedAlertIds = useRef<Set<string>>(new Set())
+  const [currentSOSCoords, setCurrentSOSCoords] = useState<{lat: number | null, lng: number | null} | null>(null)
 
-  // Flash effect and add alert when distress activates
+  // Subscribe to Firebase alerts
   useEffect(() => {
-    if (isDistressActive && !hasAddedAlert.current) {
-      hasAddedAlert.current = true
-      setShowFlash(true)
+    const unsubscribe = subscribeToAlerts((alerts) => {
+      setFirebaseAlerts(alerts)
+      
+      // Check for new alerts
+      alerts.forEach((alert) => {
+        if (alert.id && !processedAlertIds.current.has(alert.id)) {
+          processedAlertIds.current.add(alert.id)
+          
+          // Flash effect for new alert
+          setShowFlash(true)
+          setTimeout(() => setShowFlash(false), 2000)
+          
+          // Update current SOS coordinates
+          if (alert.latitude && alert.longitude) {
+            setCurrentSOSCoords({ lat: alert.latitude, lng: alert.longitude })
+          }
+          
+          // Create formatted alert for local display
+          const locationStr = alert.latitude && alert.longitude
+            ? `GPS: ${alert.latitude.toFixed(4)}° N, ${alert.longitude.toFixed(4)}° W`
+            : "GPS: Location unavailable"
+          
+          const formattedAlert = {
+            id: alert.id,
+            type: "URGENT: Stealth SOS - Live Audio & GPS Streaming",
+            location: locationStr,
+            time: "Just now",
+            status: "active",
+            priority: "critical" as const,
+            hasAudio: true,
+          }
+          
+          setLocalAlerts((prev) => [formattedAlert, ...prev])
+        }
+      })
+    })
 
-      // Add the urgent alert with live GPS if available
-      const locationStr = gpsCoordinates 
-        ? `GPS: ${gpsCoordinates.latitude.toFixed(4)}° N, ${gpsCoordinates.longitude.toFixed(4)}° W (Live)`
-        : "GPS: Acquiring location..."
-      const newAlert = {
-        id: "sos-" + Date.now(),
-        type: "URGENT: Stealth SOS Triggered - Live Audio & GPS streaming",
-        location: locationStr,
-        time: "Just now",
-        status: "active",
-        priority: "critical" as const,
-      }
-      setAlerts((prev) => [newAlert, ...prev])
+    return () => unsubscribe()
+  }, [])
 
-      // Stop flash after a moment
-      setTimeout(() => setShowFlash(false), 2000)
-    }
-  }, [isDistressActive])
-
-  // Reset when distress is cleared
-  useEffect(() => {
-    if (!isDistressActive) {
-      hasAddedAlert.current = false
-    }
-  }, [isDistressActive])
+  const hasActiveSOSAlert = localAlerts.some(a => a.priority === "critical" && a.status === "active")
 
   return (
     <div className="h-full bg-slate-900 flex flex-col overflow-hidden relative">
@@ -191,11 +212,35 @@ export function PoliceDashboard() {
         {showFlash && (
           <motion.div
             initial={{ opacity: 0 }}
-            animate={{ opacity: [0, 0.3, 0, 0.3, 0] }}
+            animate={{ opacity: [0, 0.4, 0, 0.4, 0] }}
             exit={{ opacity: 0 }}
             transition={{ duration: 2 }}
             className="absolute inset-0 bg-red-500 z-50 pointer-events-none"
           />
+        )}
+      </AnimatePresence>
+
+      {/* Critical SOS Banner */}
+      <AnimatePresence>
+        {hasActiveSOSAlert && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="bg-red-600 text-white overflow-hidden"
+          >
+            <div className="px-4 py-2 flex items-center justify-center gap-3">
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+              <span className="font-bold text-sm uppercase tracking-wide">
+                Critical SOS Alert - Immediate Response Required
+              </span>
+              <div className="flex items-center gap-2 ml-4">
+                <Mic className="w-4 h-4 animate-pulse" />
+                <span className="text-xs">Audio Streaming</span>
+              </div>
+              <AlertTriangle className="w-5 h-5 animate-pulse" />
+            </div>
+          </motion.div>
         )}
       </AnimatePresence>
 
@@ -205,7 +250,7 @@ export function PoliceDashboard() {
           <div className="flex items-center gap-2">
             <Shield className="w-6 h-6 text-blue-400" />
             <span className="font-semibold text-white">
-              Emergency Command Center
+              Project Aegis - Emergency Command Center
             </span>
           </div>
           <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 rounded">
@@ -222,7 +267,7 @@ export function PoliceDashboard() {
           </div>
           <div className="relative">
             <Bell className="w-5 h-5 text-slate-400" />
-            {isDistressActive && (
+            {hasActiveSOSAlert && (
               <span className="absolute -top-1 -right-1 w-2 h-2 bg-red-500 rounded-full animate-ping" />
             )}
           </div>
@@ -245,17 +290,17 @@ export function PoliceDashboard() {
                 Live SOS Alerts
               </h2>
               <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full">
-                {alerts.length} active
+                {localAlerts.length} active
               </span>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3">
-            {alerts.map((alert, i) => (
+            {localAlerts.map((alert, i) => (
               <AlertCard
                 key={alert.id}
                 alert={alert}
-                isNew={i === 0 && alert.priority === "critical" && isDistressActive}
+                isNew={i === 0 && alert.priority === "critical"}
               />
             ))}
           </div>
@@ -268,7 +313,7 @@ export function PoliceDashboard() {
             <StatCard
               icon={PhoneCall}
               label="Active Calls"
-              value={isDistressActive ? 3 : 2}
+              value={hasActiveSOSAlert ? 3 : 2}
               color="text-red-400"
             />
             <StatCard
@@ -320,12 +365,19 @@ export function PoliceDashboard() {
               <div className="absolute top-4 left-4 flex items-center gap-2">
                 <span className="px-3 py-1.5 bg-slate-900/80 rounded-lg text-sm text-white font-medium flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-blue-400" />
-                  Manhattan District
+                  Live Tactical Map
                 </span>
               </div>
 
+              {/* GPS Coordinates Display */}
+              {currentSOSCoords && (
+                <div className="absolute top-4 right-16 px-3 py-1.5 bg-red-900/80 rounded-lg text-xs text-white font-mono">
+                  LAT: {currentSOSCoords.lat?.toFixed(4) || "N/A"} | LNG: {currentSOSCoords.lng?.toFixed(4) || "N/A"}
+                </div>
+              )}
+
               {/* Zoom controls */}
-              <div className="absolute top-4 right-4 flex flex-col gap-1">
+              <div className="absolute top-16 right-4 flex flex-col gap-1">
                 <button className="w-8 h-8 bg-slate-900/80 rounded flex items-center justify-center text-white hover:bg-slate-700">
                   +
                 </button>
@@ -347,9 +399,9 @@ export function PoliceDashboard() {
                   <div className="w-3 h-3 bg-green-500 rounded-full" />
                 </div>
 
-                {/* SOS marker - only shows when distress active */}
+                {/* SOS marker - only shows when alert is active */}
                 <AnimatePresence>
-                  {isDistressActive && (
+                  {hasActiveSOSAlert && (
                     <motion.div
                       initial={{ scale: 0, opacity: 0 }}
                       animate={{ scale: 1, opacity: 1 }}
@@ -371,8 +423,9 @@ export function PoliceDashboard() {
                       </div>
                       {/* Label */}
                       <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                        <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded shadow-lg">
-                          STEALTH SOS
+                        <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded shadow-lg flex items-center gap-1">
+                          <Mic className="w-3 h-3" />
+                          STEALTH SOS - LIVE
                         </span>
                       </div>
                     </motion.div>
@@ -391,7 +444,7 @@ export function PoliceDashboard() {
                   <span className="text-slate-300">Stations</span>
                 </span>
                 <span className="flex items-center gap-1.5">
-                  <span className="w-2 h-2 bg-red-500 rounded-full" />
+                  <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
                   <span className="text-slate-300">SOS</span>
                 </span>
               </div>
