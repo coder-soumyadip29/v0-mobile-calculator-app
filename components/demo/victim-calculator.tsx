@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect, useCallback, useRef } from "react"
 import { cn } from "@/lib/utils"
 import {
   CalculatorState,
@@ -80,7 +80,59 @@ function CalcButton({
   )
 }
 
-function CalcDisplay({ value }: { value: string }) {
+// Invisible Gesture Pad for Panic Swipe Detection
+function PanicGesturePad({ onPanicSwipe }: { onPanicSwipe: () => void }) {
+  const startYRef = useRef<number | null>(null)
+  const startTimeRef = useRef<number | null>(null)
+  
+  const SWIPE_THRESHOLD = 100 // Minimum pixels to travel downward
+  const TIME_THRESHOLD = 500 // Maximum milliseconds for gesture
+  
+  const handlePointerDown = (e: React.PointerEvent) => {
+    startYRef.current = e.clientY
+    startTimeRef.current = Date.now()
+  }
+  
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (startYRef.current === null || startTimeRef.current === null) return
+    
+    const deltaY = e.clientY - startYRef.current
+    const elapsed = Date.now() - startTimeRef.current
+    
+    // Check for rapid swipe down gesture
+    if (deltaY >= SWIPE_THRESHOLD && elapsed <= TIME_THRESHOLD) {
+      // Trigger panic SOS
+      onPanicSwipe()
+      // Reset tracking
+      startYRef.current = null
+      startTimeRef.current = null
+    }
+  }
+  
+  const handlePointerUp = () => {
+    startYRef.current = null
+    startTimeRef.current = null
+  }
+  
+  const handlePointerCancel = () => {
+    startYRef.current = null
+    startTimeRef.current = null
+  }
+  
+  return (
+    <div
+      className="absolute inset-0 z-10"
+      style={{ touchAction: "pan-y" }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerCancel}
+      aria-hidden="true"
+    />
+  )
+}
+
+function CalcDisplay({ value, onPanicSwipe }: { value: string; onPanicSwipe: () => void }) {
   const displayValue = formatDisplay(value)
   const length = displayValue.length
 
@@ -94,7 +146,9 @@ function CalcDisplay({ value }: { value: string }) {
           : "text-3xl"
 
   return (
-    <div className="w-full px-4 py-2 flex items-end justify-end min-h-[90px]">
+    <div className="w-full px-4 py-2 flex items-end justify-end min-h-[90px] relative">
+      {/* Invisible Panic Gesture Pad - sits over display area */}
+      <PanicGesturePad onPanicSwipe={onPanicSwipe} />
       <span className={cn("font-light text-white transition-all", fontSize)}>
         {displayValue}
       </span>
@@ -244,7 +298,7 @@ export function VictimCalculator() {
         aria-label="Hidden emergency trigger"
       />
 
-      <CalcDisplay value={state.display} />
+      <CalcDisplay value={state.display} onPanicSwipe={activateDistress} />
 
       <div className="grid grid-cols-4 gap-2 mt-2">
         <CalcButton label={clearLabel} onClick={handleClear} variant="function" />
