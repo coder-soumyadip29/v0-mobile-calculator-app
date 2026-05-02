@@ -22,16 +22,18 @@ import { cn } from "@/lib/utils"
 import { subscribeToAlerts, type SOSAlert } from "@/lib/firebase"
 
 function LiveClock() {
-  const [time, setTime] = useState(new Date())
+  const [time, setTime] = useState<Date | null>(null)
 
   useEffect(() => {
+    // Set initial time only on client to avoid hydration mismatch
+    setTime(new Date())
     const interval = setInterval(() => setTime(new Date()), 1000)
     return () => clearInterval(interval)
   }, [])
 
   return (
     <span className="font-mono text-sm text-slate-300">
-      {time.toLocaleTimeString("en-US", { hour12: false })}
+      {time ? time.toLocaleTimeString("en-US", { hour12: false }) : "--:--:--"}
     </span>
   )
 }
