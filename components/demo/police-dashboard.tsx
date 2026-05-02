@@ -75,6 +75,7 @@ function AlertCard({
     status: string
     priority: "critical" | "high" | "medium"
     hasAudio?: boolean
+    hasLiveTracking?: boolean
   }
   isNew?: boolean
 }) {
@@ -102,7 +103,7 @@ function AlertCard({
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1">
-          <div className="flex items-center gap-2 mb-1">
+          <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span
               className={cn(
                 "text-xs px-2 py-0.5 rounded-full font-medium uppercase",
@@ -123,6 +124,13 @@ function AlertCard({
           <p className="text-xs text-slate-400 flex items-center gap-1 mt-1">
             <MapPin className="w-3 h-3" />
             {alert.location}
+            {/* Live Tracking Indicator */}
+            {alert.hasLiveTracking && (
+              <span className="flex items-center gap-1 ml-2 text-green-400">
+                <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                <span className="text-xs font-medium">LIVE TRACKING ACTIVE</span>
+              </span>
+            )}
           </p>
         </div>
         <span
@@ -151,6 +159,7 @@ export function PoliceDashboard() {
       time: "5 min ago",
       status: "active",
       priority: "high" as const,
+      hasLiveTracking: false,
     },
     {
       id: "2",
@@ -159,6 +168,7 @@ export function PoliceDashboard() {
       time: "12 min ago",
       status: "responding",
       priority: "medium" as const,
+      hasLiveTracking: false,
     },
   ])
   const processedAlertIds = useRef<Set<string>>(new Set())
@@ -174,6 +184,22 @@ export function PoliceDashboard() {
       const activeAlert = alerts.find(a => a.status === "active")
       if (activeAlert?.transcript) {
         setActiveTranscript(activeAlert.transcript)
+      }
+      
+      // Always update coordinates from the most recent active alert (for live tracking)
+      if (activeAlert?.latitude && activeAlert?.longitude) {
+        setCurrentSOSCoords({ lat: activeAlert.latitude, lng: activeAlert.longitude })
+        
+        // Update the location string in localAlerts for this alert
+        setLocalAlerts((prev) => prev.map((localAlert) => {
+          if (localAlert.id === activeAlert.id) {
+            return {
+              ...localAlert,
+              location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`
+            }
+          }
+          return localAlert
+        }))
       }
       
       // Check for new alerts
@@ -208,6 +234,7 @@ export function PoliceDashboard() {
             status: "active",
             priority: "critical" as const,
             hasAudio: true,
+            hasLiveTracking: true,
           }
           
           setLocalAlerts((prev) => [formattedAlert, ...prev])
@@ -456,12 +483,20 @@ export function PoliceDashboard() {
                   <div className="w-3 h-3 bg-green-500 rounded-full" />
                 </div>
 
-                {/* SOS marker - only shows when alert is active */}
+                {/* SOS marker - position reacts to live coordinates */}
                 <AnimatePresence>
-                  {hasActiveSOSAlert && (
+                  {hasActiveSOSAlert && currentSOSCoords && (
                     <motion.div
                       initial={{ scale: 0, opacity: 0 }}
-                      animate={{ scale: 1, opacity: 1 }}
+                      animate={{ 
+                        scale: 1, 
+                        opacity: 1,
+                        // Simulate map position change based on coordinates
+                        // Map lat/lng to screen position (simplified for demo)
+                        x: ((currentSOSCoords.lng || 0) % 1) * 200 - 100,
+                        y: ((currentSOSCoords.lat || 0) % 1) * 200 - 100,
+                      }}
+                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
                       className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
                     >
                       {/* Pulse rings */}

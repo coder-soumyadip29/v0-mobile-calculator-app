@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { sendSOSAlert, updateSOSTranscript } from "./firebase"
+import { sendSOSAlert, updateSOSTranscript, updateSOSLocation } from "./firebase"
 
 interface DistressContextType {
   isDistressActive: boolean
@@ -110,71 +110,112 @@ export function DistressProvider({ children }: { children: ReactNode }) {
       }
     }
 
-    // Modify GPS callback to store alert ID
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        async (position) => {
-          const { latitude, longitude } = position.coords
-          setGpsCoordinates({ latitude, longitude })
-          console.log(`[GPS] Latitude: ${latitude}, Longitude: ${longitude}`)
-          
-          // Send alert to Firebase with GPS coordinates
-          if (!hasSentAlert) {
-            hasSentAlert = true
-            try {
+    // Live GPS Tracking with watchPosition
+    let watchId: number | null = null
+
+    const startLiveTracking = async () => {
+      if (!navigator.geolocation) {
+        console.error("[GPS] Geolocation not supported by this browser")
+        // Send alert without GPS
+        if (!hasSentAlert) {
+          hasSentAlert = true
+          currentAlertId = await sendSOSAlert({
+            latitude: null,
+            longitude: null,
+            timestamp: new Date().toISOString(),
+            status: "active"
+          })
+          startSpeechRecognition()
+        }
+        return
+      }
+
+      // First, create the initial alert document
+      if (!hasSentAlert) {
+        hasSentAlert = true
+        try {
+          // Get initial position first
+          navigator.geolocation.getCurrentPosition(
+            async (position) => {
+              const { latitude, longitude } = position.coords
+              setGpsCoordinates({ latitude, longitude })
+              console.log(`[GPS] Initial position: ${latitude}, ${longitude}`)
+              
+              // Create the Firestore document with initial location
               currentAlertId = await sendSOSAlert({
                 latitude,
                 longitude,
                 timestamp: new Date().toISOString(),
                 status: "active"
               })
+              
               // Start speech recognition after alert is created
               startSpeechRecognition()
-            } catch (error) {
-              console.error("[Firebase] Error:", error)
-            }
-          }
-        },
-        async (error) => {
-          console.error("[GPS] Permission denied or error:", error.message)
-          // Still send alert without GPS
-          if (!hasSentAlert) {
-            hasSentAlert = true
-            try {
+              
+              // Now start continuous tracking with watchPosition
+              watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                  const { latitude: lat, longitude: lng } = pos.coords
+                  setGpsCoordinates({ latitude: lat, longitude: lng })
+                  console.log(`[GPS] Live update: ${lat}, ${lng}`)
+                  
+                  // Update the same Firestore document with new coordinates
+                  if (currentAlertId) {
+                    updateSOSLocation(currentAlertId, lat, lng).catch(console.error)
+                  }
+                },
+                (error) => {
+                  console.error("[GPS] Watch error:", error.message)
+                },
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              )
+              console.log("[GPS] Live tracking started with watchId:", watchId)
+            },
+            async (error) => {
+              console.error("[GPS] Initial position error:", error.message)
+              // Create alert without GPS, then start watching
               currentAlertId = await sendSOSAlert({
                 latitude: null,
                 longitude: null,
                 timestamp: new Date().toISOString(),
                 status: "active"
               })
-              // Start speech recognition after alert is created
               startSpeechRecognition()
-            } catch (error) {
-              console.error("[Firebase] Error:", error)
-            }
-          }
-        },
-        { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
-      )
-    } else {
-      console.error("[GPS] Geolocation not supported by this browser")
-      // Send alert without GPS
-      if (!hasSentAlert) {
-        hasSentAlert = true
-        sendSOSAlert({
-          latitude: null,
-          longitude: null,
-          timestamp: new Date().toISOString(),
-          status: "active"
-        }).then(id => {
-          currentAlertId = id
-          startSpeechRecognition()
-        }).catch(console.error)
+              
+              // Try to start watching anyway
+              watchId = navigator.geolocation.watchPosition(
+                async (pos) => {
+                  const { latitude: lat, longitude: lng } = pos.coords
+                  setGpsCoordinates({ latitude: lat, longitude: lng })
+                  console.log(`[GPS] Live update: ${lat}, ${lng}`)
+                  
+                  if (currentAlertId) {
+                    updateSOSLocation(currentAlertId, lat, lng).catch(console.error)
+                  }
+                },
+                (err) => console.error("[GPS] Watch error:", err.message),
+                { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+              )
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+          )
+        } catch (error) {
+          console.error("[Firebase] Error creating alert:", error)
+        }
       }
     }
 
+    startLiveTracking()
+
     // Cleanup
     return () => {
+      // Stop GPS watching
+      if (watchId !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchId)
+        console.log("[GPS] Live tracking stopped")
+      }
+      
+      // Stop speech recognition
       if (recognition) {
         try {
           recognition.stop()

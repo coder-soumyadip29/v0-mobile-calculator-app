@@ -48,6 +48,17 @@ export async function updateSOSTranscript(alertId: string, transcript: string) {
   }
 }
 
+export async function updateSOSLocation(alertId: string, latitude: number, longitude: number) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { latitude, longitude })
+    console.log(`[Firebase] Location updated: ${latitude}, ${longitude}`)
+  } catch (error) {
+    console.error("[Firebase] Error updating location:", error)
+    throw error
+  }
+}
+
 export function subscribeToAlerts(callback: (alerts: SOSAlert[]) => void) {
   const alertsQuery = query(
     collection(db, "alerts"),
