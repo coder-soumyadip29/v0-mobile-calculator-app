@@ -76,7 +76,10 @@ function AlertCard({
     priority: "critical" | "high" | "medium"
     hasAudio?: boolean
     hasLiveTracking?: boolean
+<<<<<<< HEAD
     latestImage?: string
+=======
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
   }
   isNew?: boolean
 }) {
@@ -145,6 +148,7 @@ function AlertCard({
           {alert.status}
         </span>
       </div>
+<<<<<<< HEAD
 
       {/* Visual Evidence Section */}
       {alert.latestImage && (
@@ -160,6 +164,8 @@ function AlertCard({
           />
         </div>
       )}
+=======
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
     </motion.div>
   )
 }
@@ -176,7 +182,10 @@ export function PoliceDashboard() {
       status: "active",
       priority: "high" as const,
       hasLiveTracking: false,
+<<<<<<< HEAD
       latestImage: undefined as string | undefined,
+=======
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
     },
     {
       id: "2",
@@ -186,7 +195,10 @@ export function PoliceDashboard() {
       status: "responding",
       priority: "medium" as const,
       hasLiveTracking: false,
+<<<<<<< HEAD
       latestImage: undefined as string | undefined,
+=======
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
     },
   ])
   const processedAlertIds = useRef<Set<string>>(new Set())
@@ -208,13 +220,21 @@ export function PoliceDashboard() {
       if (activeAlert?.latitude && activeAlert?.longitude) {
         setCurrentSOSCoords({ lat: activeAlert.latitude, lng: activeAlert.longitude })
         
+<<<<<<< HEAD
         // Update the location string and image in localAlerts for this alert
+=======
+        // Update the location string in localAlerts for this alert
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
         setLocalAlerts((prev) => prev.map((localAlert) => {
           if (localAlert.id === activeAlert.id) {
             return {
               ...localAlert,
+<<<<<<< HEAD
               location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`,
               latestImage: activeAlert.latestImage || localAlert.latestImage
+=======
+              location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
             }
           }
           return localAlert
@@ -254,7 +274,10 @@ export function PoliceDashboard() {
             priority: "critical" as const,
             hasAudio: true,
             hasLiveTracking: true,
+<<<<<<< HEAD
             latestImage: alert.latestImage,
+=======
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
           }
           
           setLocalAlerts((prev) => [formattedAlert, ...prev])

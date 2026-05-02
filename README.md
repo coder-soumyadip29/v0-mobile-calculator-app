@@ -1,4 +1,8 @@
+<<<<<<< HEAD
 # v0-mobile-calculator-app
+=======
+# mobile-calculator-app
+>>>>>>> 5adac67ab51aba458b76f0cf0e51e8d401fb7968
 
 This is a [Next.js](https://nextjs.org) project bootstrapped with [v0](https://v0.app).
 
