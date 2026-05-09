@@ -1,8 +1,8 @@
-"use client"
+"use client";
 
-import { useEffect, useRef, useState } from "react"
-import L from "leaflet"
-import "leaflet/dist/leaflet.css"
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 
 const redIcon = new L.Icon({
   iconUrl:
@@ -16,7 +16,7 @@ const redIcon = new L.Icon({
   iconSize: [24, 36],
   iconAnchor: [12, 36],
   popupAnchor: [0, -36],
-})
+});
 
 const blueIcon = new L.Icon({
   iconUrl:
@@ -30,7 +30,7 @@ const blueIcon = new L.Icon({
   iconSize: [24, 36],
   iconAnchor: [12, 36],
   popupAnchor: [0, -36],
-})
+});
 
 const greenIcon = new L.Icon({
   iconUrl:
@@ -44,113 +44,123 @@ const greenIcon = new L.Icon({
   iconSize: [24, 36],
   iconAnchor: [12, 36],
   popupAnchor: [0, -36],
-})
+});
 
 // ── Nominatim reverse geocoding with debounce ────────────────────────────
-const NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse"
-const GEOCODE_DEBOUNCE_MS = 800 // prevent API spam on rapid coordinate updates
+const NOMINATIM_URL = "https://nominatim.openstreetmap.org/reverse";
+const GEOCODE_DEBOUNCE_MS = 800; // prevent API spam on rapid coordinate updates
 
-import { type Responder } from "@/lib/responders"
+import { type Responder } from "@/lib/responders";
 
 interface LiveMapProps {
-  latitude: number
-  longitude: number
-  responders?: Responder[]
-  nearestResponder?: Responder | null
-  showHeatmap?: boolean
-  historicalCoords?: [number, number, number][]
+  latitude: number;
+  longitude: number;
+  responders?: Responder[];
+  nearestResponder?: Responder | null;
+  showHeatmap?: boolean;
+  historicalCoords?: [number, number, number][];
 }
 
-export default function LiveMap({ latitude, longitude, responders, nearestResponder, showHeatmap, historicalCoords }: LiveMapProps) {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const mapRef = useRef<L.Map | null>(null)
-  const markerRef = useRef<L.Marker | null>(null)
-  const polylineRef = useRef<L.Polyline | null>(null)
-  const respondersLayerRef = useRef<L.LayerGroup | null>(null)
-  const heatLayerRef = useRef<any>(null)
-  const [isReady, setIsReady] = useState(false)
-  const [address, setAddress] = useState("Fetching address...")
+export default function LiveMap({
+  latitude,
+  longitude,
+  responders,
+  nearestResponder,
+  showHeatmap,
+  historicalCoords,
+}: LiveMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
+  const polylineRef = useRef<L.Polyline | null>(null);
+  const respondersLayerRef = useRef<L.LayerGroup | null>(null);
+  const heatLayerRef = useRef<any>(null);
+  const [isReady, setIsReady] = useState(false);
+  const [address, setAddress] = useState("Fetching address...");
 
   // ── Initialize the map once the container div is mounted ───────────────
   useEffect(() => {
     // Guard: don't init if container is missing or map already exists
-    if (!containerRef.current || mapRef.current) return
+    if (!containerRef.current || mapRef.current) return;
 
     const map = L.map(containerRef.current, {
       center: [latitude, longitude],
       zoom: 14,
-      scrollWheelZoom: true,
+      scrollWheelZoom: false,
       zoomControl: true,
-    })
+    });
 
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", {
-      attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
-    }).addTo(map)
+    L.tileLayer(
+      "https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png",
+      {
+        attribution: '&copy; <a href="https://carto.com/">CARTO</a>',
+      },
+    ).addTo(map);
 
     const marker = L.marker([latitude, longitude], { icon: redIcon })
       .addTo(map)
-      .bindPopup(buildPopupContent(latitude, longitude, "Fetching address..."))
+      .bindPopup(buildPopupContent(latitude, longitude, "Fetching address..."));
 
-    mapRef.current = map
-    markerRef.current = marker
-    setIsReady(true)
+    mapRef.current = map;
+    markerRef.current = marker;
+    setIsReady(true);
 
     // Ensure tiles render correctly after initial layout
-    setTimeout(() => map.invalidateSize(), 100)
+    setTimeout(() => map.invalidateSize(), 100);
 
     // Cleanup: fully destroy the map instance on unmount
     return () => {
       if (mapRef.current) {
-        mapRef.current.remove()
-        mapRef.current = null
-        markerRef.current = null
-        polylineRef.current = null
-        respondersLayerRef.current = null
-        heatLayerRef.current = null
-        setIsReady(false)
+        mapRef.current.remove();
+        mapRef.current = null;
+        markerRef.current = null;
+        polylineRef.current = null;
+        respondersLayerRef.current = null;
+        heatLayerRef.current = null;
+        setIsReady(false);
       }
-    }
+    };
     // Only run on mount/unmount — coords are handled separately below
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, []);
 
   // ── Draw responder markers ──────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !isReady || !responders) return
+    if (!mapRef.current || !isReady || !responders) return;
 
     if (!respondersLayerRef.current) {
-      respondersLayerRef.current = L.layerGroup().addTo(mapRef.current)
+      respondersLayerRef.current = L.layerGroup().addTo(mapRef.current);
     } else {
-      respondersLayerRef.current.clearLayers()
+      respondersLayerRef.current.clearLayers();
     }
 
     responders.forEach((r) => {
-      const icon = r.type === "police" ? blueIcon : greenIcon
+      const icon = r.type === "police" ? blueIcon : greenIcon;
       L.marker([r.latitude, r.longitude], { icon })
         .bindPopup(
           `<div style="font-family: sans-serif; padding: 4px;">
              <strong>${r.name}</strong><br/>
-             <span style="color: #6b7280; font-size: 12px;">${r.type === 'police' ? 'Police Station' : 'Hospital'}</span>
-           </div>`
+             <span style="color: #6b7280; font-size: 12px;">${r.type === "police" ? "Police Station" : "Hospital"}</span>
+           </div>`,
         )
-        .addTo(respondersLayerRef.current!)
-    })
-  }, [responders, isReady])
+        .addTo(respondersLayerRef.current!);
+    });
+  }, [responders, isReady]);
 
   // ── Update marker position, polyline and recenter when coordinates change ────────
   useEffect(() => {
-    if (!mapRef.current || !markerRef.current || !isReady) return
+    if (!mapRef.current || !markerRef.current || !isReady) return;
 
-    markerRef.current.setLatLng([latitude, longitude])
+    markerRef.current.setLatLng([latitude, longitude]);
     markerRef.current.setPopupContent(
-      buildPopupContent(latitude, longitude, address)
-    )
+      buildPopupContent(latitude, longitude, address),
+    );
 
     if (nearestResponder) {
       const lineCoords: L.LatLngTuple[] = [
         [latitude, longitude],
         [nearestResponder.latitude, nearestResponder.longitude],
-      ]
+      ];
 
       if (!polylineRef.current) {
         polylineRef.current = L.polyline(lineCoords, {
@@ -158,67 +168,84 @@ export default function LiveMap({ latitude, longitude, responders, nearestRespon
           dashArray: "10, 10",
           weight: 3,
           opacity: 0.8,
-        }).addTo(mapRef.current)
+        }).addTo(mapRef.current);
       } else {
-        polylineRef.current.setLatLngs(lineCoords)
+        polylineRef.current.setLatLngs(lineCoords);
       }
     } else if (polylineRef.current) {
-      polylineRef.current.remove()
-      polylineRef.current = null
+      polylineRef.current.remove();
+      polylineRef.current = null;
     }
 
     mapRef.current.flyTo([latitude, longitude], mapRef.current.getZoom(), {
       duration: 1.5,
-    })
-  }, [latitude, longitude, address, nearestResponder, isReady])
+    });
+  }, [latitude, longitude, address, nearestResponder, isReady]);
 
   // ── Heatmap logic ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (!mapRef.current || !isReady) return
+    if (!mapRef.current || !isReady) return;
 
     if (showHeatmap && historicalCoords && historicalCoords.length > 0) {
-      require("leaflet.heat") // Dynamically load the plugin
+      require("leaflet.heat"); // Dynamically load the plugin
 
       // Hide marker and polyline
-      if (markerRef.current) markerRef.current.setOpacity(0)
-      if (polylineRef.current) polylineRef.current.setStyle({ opacity: 0 })
-      if (respondersLayerRef.current && mapRef.current.hasLayer(respondersLayerRef.current)) {
-        mapRef.current.removeLayer(respondersLayerRef.current)
+      if (markerRef.current) markerRef.current.setOpacity(0);
+      if (polylineRef.current) polylineRef.current.setStyle({ opacity: 0 });
+      if (
+        respondersLayerRef.current &&
+        mapRef.current.hasLayer(respondersLayerRef.current)
+      ) {
+        mapRef.current.removeLayer(respondersLayerRef.current);
       }
 
       if (!heatLayerRef.current) {
-        heatLayerRef.current = (L as any).heatLayer(historicalCoords, {
-          radius: 25,
-          blur: 15,
-          maxZoom: 14,
-          gradient: { 0.4: "blue", 0.6: "cyan", 0.7: "lime", 0.8: "yellow", 1.0: "red" },
-        }).addTo(mapRef.current)
+        heatLayerRef.current = (L as any)
+          .heatLayer(historicalCoords, {
+            radius: 25,
+            blur: 15,
+            maxZoom: 14,
+            gradient: {
+              0.4: "blue",
+              0.6: "cyan",
+              0.7: "lime",
+              0.8: "yellow",
+              1.0: "red",
+            },
+          })
+          .addTo(mapRef.current);
       } else {
-        heatLayerRef.current.setLatLngs(historicalCoords)
+        heatLayerRef.current.setLatLngs(historicalCoords);
         if (!mapRef.current.hasLayer(heatLayerRef.current)) {
-          heatLayerRef.current.addTo(mapRef.current)
+          heatLayerRef.current.addTo(mapRef.current);
         }
       }
     } else {
       // Restore normal view
-      if (markerRef.current) markerRef.current.setOpacity(1)
-      if (polylineRef.current) polylineRef.current.setStyle({ opacity: 0.8 })
-      if (respondersLayerRef.current && !mapRef.current.hasLayer(respondersLayerRef.current)) {
-        respondersLayerRef.current.addTo(mapRef.current)
+      if (markerRef.current) markerRef.current.setOpacity(1);
+      if (polylineRef.current) polylineRef.current.setStyle({ opacity: 0.8 });
+      if (
+        respondersLayerRef.current &&
+        !mapRef.current.hasLayer(respondersLayerRef.current)
+      ) {
+        respondersLayerRef.current.addTo(mapRef.current);
       }
 
       // Remove heatmap
-      if (heatLayerRef.current && mapRef.current.hasLayer(heatLayerRef.current)) {
-        mapRef.current.removeLayer(heatLayerRef.current)
+      if (
+        heatLayerRef.current &&
+        mapRef.current.hasLayer(heatLayerRef.current)
+      ) {
+        mapRef.current.removeLayer(heatLayerRef.current);
       }
     }
-  }, [showHeatmap, historicalCoords, isReady])
+  }, [showHeatmap, historicalCoords, isReady]);
 
   // ── Reverse geocoding with debounce ────────────────────────────────────
   useEffect(() => {
-    setAddress("Fetching address...")
+    setAddress("Fetching address...");
 
-    const controller = new AbortController()
+    const controller = new AbortController();
 
     const timerId = setTimeout(async () => {
       try {
@@ -230,32 +257,32 @@ export default function LiveMap({ latitude, longitude, responders, nearestRespon
               // Nominatim requires a valid User-Agent for their usage policy
               "Accept-Language": "en",
             },
-          }
-        )
+          },
+        );
 
-        if (!res.ok) throw new Error(`Geocoding failed: ${res.status}`)
+        if (!res.ok) throw new Error(`Geocoding failed: ${res.status}`);
 
-        const data = await res.json()
+        const data = await res.json();
 
         if (data?.display_name) {
-          setAddress(data.display_name)
+          setAddress(data.display_name);
         } else {
-          setAddress("Address unavailable")
+          setAddress("Address unavailable");
         }
       } catch (err: any) {
         // Don't update state if the request was intentionally aborted
-        if (err?.name === "AbortError") return
-        console.warn("Reverse geocoding error:", err)
-        setAddress("Address unavailable")
+        if (err?.name === "AbortError") return;
+        console.warn("Reverse geocoding error:", err);
+        setAddress("Address unavailable");
       }
-    }, GEOCODE_DEBOUNCE_MS)
+    }, GEOCODE_DEBOUNCE_MS);
 
     // Cleanup: cancel pending fetch + timer if coords change before debounce fires
     return () => {
-      clearTimeout(timerId)
-      controller.abort()
-    }
-  }, [latitude, longitude])
+      clearTimeout(timerId);
+      controller.abort();
+    };
+  }, [latitude, longitude]);
 
   return (
     <div
@@ -268,13 +295,13 @@ export default function LiveMap({ latitude, longitude, responders, nearestRespon
         overflow: "hidden",
       }}
     />
-  )
+  );
 }
 
 // ── Build styled popup HTML ──────────────────────────────────────────────
 function buildPopupContent(lat: number, lng: number, address: string): string {
-  const isLoading = address === "Fetching address..."
-  const isFailed = address === "Address unavailable"
+  const isLoading = address === "Fetching address...";
+  const isFailed = address === "Address unavailable";
 
   return `
     <div style="
@@ -337,5 +364,5 @@ function buildPopupContent(lat: number, lng: number, address: string): string {
         ">${lat.toFixed(5)}°N, ${lng.toFixed(5)}°${lng >= 0 ? "E" : "W"}</span>
       </div>
     </div>
-  `
+  `;
 }
