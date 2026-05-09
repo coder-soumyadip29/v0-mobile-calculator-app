@@ -231,30 +231,20 @@ export function PoliceDashboard() {
     [number, number, number][]
   >([]);
   const [firebaseAlerts, setFirebaseAlerts] = useState<SOSAlert[]>([]);
-  const [localAlerts, setLocalAlerts] = useState([
-    {
-      id: "1",
-      type: "Domestic Disturbance",
-      location: "142 Oak Street",
-      timestamp: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-      time: "5 min ago",
-      status: "active",
-      priority: "high" as const,
-      hasLiveTracking: false,
-      evidenceImages: undefined as string[] | undefined,
-    },
-    {
-      id: "2",
-      type: "Traffic Accident",
-      location: "I-95 Exit 23",
-      timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-      time: "12 min ago",
-      status: "responding",
-      priority: "medium" as const,
-      hasLiveTracking: false,
-      evidenceImages: undefined as string[] | undefined,
-    },
-  ]);
+  const [localAlerts, setLocalAlerts] = useState(
+    [] as {
+      id: string;
+      type: string;
+      location: string;
+      timestamp?: string;
+      time: string;
+      status: string;
+      priority: "critical" | "high" | "medium";
+      hasAudio?: boolean;
+      hasLiveTracking?: boolean;
+      evidenceImages?: string[];
+    }[],
+  );
   const processedAlertIds = useRef<Set<string>>(new Set());
   const [currentSOSCoords, setCurrentSOSCoords] = useState<{
     lat: number | null;
