@@ -1,5 +1,5 @@
 import { initializeApp } from "firebase/app"
-import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp, doc, updateDoc } from "firebase/firestore"
+import { getFirestore, collection, addDoc, onSnapshot, query, orderBy, limit, Timestamp, doc, updateDoc, getDocs } from "firebase/firestore"
 
 const firebaseConfig = {
   apiKey: "AIzaSyC72k7ZhlWobsJ3zJcC2YkOhYfoQBQH89o",
@@ -21,8 +21,11 @@ export interface SOSAlert {
   status: "active" | "responding" | "resolved"
   transcript?: string
   address?: string
-  latestImage?: string
+  evidenceImages?: string[]
   lastImageCapturedAt?: any
+  batteryLevel?: number
+  isCharging?: boolean
+  networkType?: string
 }
 
 export async function sendSOSAlert(alert: Omit<SOSAlert, "id">) {
@@ -73,16 +76,27 @@ export async function updateSOSAddress(alertId: string, address: string) {
   }
 }
 
-export async function updateSOSImage(alertId: string, base64Image: string) {
+export async function updateSOSEvidenceImages(alertId: string, evidenceImages: string[]) {
   try {
     const alertRef = doc(db, "alerts", alertId)
     await updateDoc(alertRef, { 
-      latestImage: base64Image,
+      evidenceImages: evidenceImages,
       lastImageCapturedAt: Timestamp.now()
     })
     console.log("[Firebase] Visual evidence updated for alert:", alertId)
   } catch (error) {
     console.error("[Firebase] Error updating visual evidence:", error)
+    throw error
+  }
+}
+
+export async function updateSOSTelemetry(alertId: string, batteryLevel: number, isCharging: boolean, networkType: string) {
+  try {
+    const alertRef = doc(db, "alerts", alertId)
+    await updateDoc(alertRef, { batteryLevel, isCharging, networkType })
+    console.log(`[Firebase] Telemetry updated for alert: ${alertId}`)
+  } catch (error) {
+    console.error("[Firebase] Error updating telemetry:", error)
     throw error
   }
 }
@@ -105,6 +119,28 @@ export function subscribeToAlerts(callback: (alerts: SOSAlert[]) => void) {
   }, (error) => {
     console.error("[Firebase] Error listening to alerts:", error)
   })
+}
+
+export async function fetchAllHistoricalAlerts() {
+  try {
+    const alertsQuery = query(
+      collection(db, "alerts"),
+      orderBy("createdAt", "desc"),
+      limit(1000)
+    )
+    const snapshot = await getDocs(alertsQuery)
+    const alerts: SOSAlert[] = []
+    snapshot.forEach((doc) => {
+      alerts.push({
+        id: doc.id,
+        ...doc.data()
+      } as SOSAlert)
+    })
+    return alerts
+  } catch (error) {
+    console.error("[Firebase] Error fetching historical alerts:", error)
+    return []
+  }
 }
 
 export { db }

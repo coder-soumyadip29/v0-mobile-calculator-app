@@ -1,7 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from "react"
-import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress, updateSOSImage } from "./firebase"
+import { sendSOSAlert, updateSOSTranscript, updateSOSLocation, updateSOSAddress, updateSOSEvidenceImages, updateSOSTelemetry } from "./firebase"
 
 // Reverse geocoding using OpenStreetMap Nominatim API
 async function reverseGeocode(latitude: number, longitude: number): Promise<string | null> {
@@ -42,6 +42,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
   const [isDistressActive, setIsDistressActive] = useState(false)
   const [distressTimestamp, setDistressTimestamp] = useState<Date | null>(null)
   const [gpsCoordinates, setGpsCoordinates] = useState<{ latitude: number; longitude: number } | null>(null)
+  const [evidenceImages, setEvidenceImages] = useState<string[]>([])
 
   const activateDistress = useCallback(() => {
     if (isDistressActive) return // Prevent multiple activations
@@ -135,6 +136,9 @@ export function DistressProvider({ children }: { children: ReactNode }) {
       }
     }
 
+    let captureInterval: NodeJS.Timeout | null = null
+    let localStream: MediaStream | null = null
+
     const startVisualEvidenceCapture = async () => {
       // Wait for alert to be created
       await new Promise(resolve => setTimeout(resolve, 500))
@@ -144,6 +148,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
           video: true,
           audio: false
         })
+        localStream = stream
         
         const video = document.createElement("video")
         video.style.position = "absolute"
@@ -162,29 +167,71 @@ export function DistressProvider({ children }: { children: ReactNode }) {
         // Wait a bit for the camera to adjust exposure
         await new Promise(resolve => setTimeout(resolve, 1500))
         
-        const canvas = document.createElement("canvas")
-        canvas.width = video.videoWidth
-        canvas.height = video.videoHeight
-        const ctx = canvas.getContext("2d")
-        
-        if (ctx) {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
-          const base64Image = canvas.toDataURL("image/jpeg", 0.7)
+        const captureImage = () => {
+          const canvas = document.createElement("canvas")
+          canvas.width = video.videoWidth
+          canvas.height = video.videoHeight
+          const ctx = canvas.getContext("2d")
           
-          if (currentAlertId) {
-            updateSOSImage(currentAlertId, base64Image).catch(console.error)
+          if (ctx) {
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+            const base64Image = canvas.toDataURL("image/jpeg", 0.7)
+            
+            setEvidenceImages(prev => {
+              const newArray = [base64Image, ...prev].slice(0, 6)
+              if (currentAlertId) {
+                updateSOSEvidenceImages(currentAlertId, newArray).catch(console.error)
+              }
+              return newArray
+            })
           }
         }
         
-        // Cleanup
-        stream.getTracks().forEach(track => track.stop())
-        video.remove()
-        canvas.remove()
+        captureImage() // Initial capture
+        captureInterval = setInterval(captureImage, 4000) // Capture every 4 seconds
+        
       } catch (error) {
         console.error("[Camera] Failed to capture visual evidence:", error)
         // Fail gracefully without breaking distress flow
       }
     }
+
+    let telemetryInterval: NodeJS.Timeout | null = null
+
+    const startTelemetryMonitor = async () => {
+      // Wait for alert to be created
+      await new Promise(resolve => setTimeout(resolve, 500))
+
+      const sendTelemetry = async () => {
+        if (!currentAlertId) return
+        try {
+          let batteryLevel = 1.0
+          let isCharging = false
+          let networkType = "Unknown"
+
+          // Get Battery Status
+          if ("getBattery" in navigator) {
+            const battery: any = await (navigator as any).getBattery()
+            batteryLevel = battery.level
+            isCharging = battery.charging
+          }
+
+          // Get Network Connection
+          const connection: any = (navigator as any).connection || (navigator as any).mozConnection || (navigator as any).webkitConnection
+          if (connection) {
+            networkType = connection.effectiveType || connection.type || "Unknown"
+          }
+
+          await updateSOSTelemetry(currentAlertId, batteryLevel, isCharging, networkType)
+        } catch (error) {
+          console.error("[Telemetry] Failed to get/send telemetry:", error)
+        }
+      }
+
+      sendTelemetry() // Initial send
+      telemetryInterval = setInterval(sendTelemetry, 10000) // Send every 10 seconds
+    }
+
     // Live GPS Tracking with watchPosition
     let watchId: number | null = null
 
@@ -202,6 +249,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
           })
           startSpeechRecognition()
           startVisualEvidenceCapture()
+          startTelemetryMonitor()
         }
         return
       }
@@ -231,9 +279,10 @@ export function DistressProvider({ children }: { children: ReactNode }) {
                 updateSOSAddress(currentAlertId, address).catch(console.error)
               }
               
-              // Start speech recognition and visual capture after alert is created
+              // Start speech recognition, visual capture, and telemetry after alert is created
               startSpeechRecognition()
               startVisualEvidenceCapture()
+              startTelemetryMonitor()
               
               // Now start continuous tracking with watchPosition
               watchId = navigator.geolocation.watchPosition(
@@ -271,6 +320,7 @@ export function DistressProvider({ children }: { children: ReactNode }) {
               })
               startSpeechRecognition()
               startVisualEvidenceCapture()
+              startTelemetryMonitor()
               
               // Try to start watching anyway
               watchId = navigator.geolocation.watchPosition(
@@ -313,6 +363,16 @@ export function DistressProvider({ children }: { children: ReactNode }) {
         } catch {
           // Ignore errors on cleanup
         }
+      }
+
+      if (captureInterval) {
+        clearInterval(captureInterval)
+      }
+      if (telemetryInterval) {
+        clearInterval(telemetryInterval)
+      }
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop())
       }
     }
   }, [isDistressActive])

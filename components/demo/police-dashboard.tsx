@@ -2,6 +2,9 @@
 
 import { useEffect, useState, useRef } from "react"
 import { motion, AnimatePresence } from "framer-motion"
+import dynamic from "next/dynamic"
+
+const LiveMap = dynamic(() => import("@/components/LiveMap"), { ssr: false })
 import {
   Shield,
   MapPin,
@@ -18,9 +21,13 @@ import {
   Bell,
   Mic,
   Terminal,
+  Battery,
+  BatteryCharging,
+  Smartphone,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { subscribeToAlerts, type SOSAlert } from "@/lib/firebase"
+import { subscribeToAlerts, fetchAllHistoricalAlerts, type SOSAlert } from "@/lib/firebase"
+import { RESPONDERS, calculateNearestResponder, type Responder } from "@/lib/responders"
 
 function LiveClock() {
   const [time, setTime] = useState<Date | null>(null)
@@ -76,7 +83,7 @@ function AlertCard({
     priority: "critical" | "high" | "medium"
     hasAudio?: boolean
     hasLiveTracking?: boolean
-    latestImage?: string
+    evidenceImages?: string[]
   }
   isNew?: boolean
 }) {
@@ -146,17 +153,26 @@ function AlertCard({
         </span>
       </div>
       {/* Visual Evidence Section */}
-      {alert.latestImage && (
+      {alert.evidenceImages && alert.evidenceImages.length > 0 && (
         <div className="mt-3 pt-3 border-t border-slate-700/50">
           <span className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2 block">
-            Visual Evidence
+            Visual Evidence Sequence
           </span>
-          <img
-            src={alert.latestImage}
-            alt="Captured Evidence"
-            className="w-full h-auto rounded-md border border-slate-700 shadow-sm"
-            loading="lazy"
-          />
+          <div className={cn(
+            "grid gap-2", 
+            alert.evidenceImages.length === 1 ? "grid-cols-1" : 
+            alert.evidenceImages.length === 2 ? "grid-cols-2" : "grid-cols-3"
+          )}>
+            {alert.evidenceImages.map((imgSrc, idx) => (
+              <img
+                key={idx}
+                src={imgSrc}
+                alt={`Captured Evidence ${idx + 1}`}
+                className="w-full h-auto rounded-md border border-slate-700 shadow-sm object-cover aspect-video"
+                loading="lazy"
+              />
+            ))}
+          </div>
         </div>
       )}
     </motion.div>
@@ -165,6 +181,8 @@ function AlertCard({
 
 export function PoliceDashboard() {
   const [showFlash, setShowFlash] = useState(false)
+  const [showHeatmap, setShowHeatmap] = useState(false)
+  const [historicalCoords, setHistoricalCoords] = useState<[number, number, number][]>([])
   const [firebaseAlerts, setFirebaseAlerts] = useState<SOSAlert[]>([])
   const [localAlerts, setLocalAlerts] = useState([
     {
@@ -175,7 +193,7 @@ export function PoliceDashboard() {
       status: "active",
       priority: "high" as const,
       hasLiveTracking: false,
-      latestImage: undefined as string | undefined,
+      evidenceImages: undefined as string[] | undefined,
     },
     {
       id: "2",
@@ -185,12 +203,35 @@ export function PoliceDashboard() {
       status: "responding",
       priority: "medium" as const,
       hasLiveTracking: false,
-      latestImage: undefined as string | undefined,
+      evidenceImages: undefined as string[] | undefined,
     },
   ])
   const processedAlertIds = useRef<Set<string>>(new Set())
   const [currentSOSCoords, setCurrentSOSCoords] = useState<{lat: number | null, lng: number | null} | null>(null)
   const [activeTranscript, setActiveTranscript] = useState<string>("")
+  const [nearestResponderInfo, setNearestResponderInfo] = useState<{ responder: Responder, distance: number } | null>(null)
+
+  // Calculate nearest responder when SOS coordinates change
+  useEffect(() => {
+    if (currentSOSCoords?.lat && currentSOSCoords?.lng) {
+      const nearest = calculateNearestResponder(currentSOSCoords.lat, currentSOSCoords.lng, RESPONDERS)
+      setNearestResponderInfo(nearest)
+    } else {
+      setNearestResponderInfo(null)
+    }
+  }, [currentSOSCoords])
+
+  // Fetch historical data for heatmap
+  useEffect(() => {
+    if (showHeatmap && historicalCoords.length === 0) {
+      fetchAllHistoricalAlerts().then((alerts) => {
+        const coords: [number, number, number][] = alerts
+          .filter((a) => a.latitude !== null && a.longitude !== null)
+          .map((a) => [a.latitude!, a.longitude!, 1])
+        setHistoricalCoords(coords)
+      })
+    }
+  }, [showHeatmap, historicalCoords.length])
 
   // Subscribe to Firebase alerts
   useEffect(() => {
@@ -213,7 +254,7 @@ export function PoliceDashboard() {
             return {
               ...localAlert,
               location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`,
-              latestImage: activeAlert.latestImage || localAlert.latestImage
+              evidenceImages: activeAlert.evidenceImages || localAlert.evidenceImages
             }
           }
           return localAlert
@@ -253,7 +294,7 @@ export function PoliceDashboard() {
             priority: "critical" as const,
             hasAudio: true,
             hasLiveTracking: true,
-            latestImage: alert.latestImage,
+            evidenceImages: alert.evidenceImages,
           }
           
           setLocalAlerts((prev) => [formattedAlert, ...prev])
@@ -265,6 +306,7 @@ export function PoliceDashboard() {
   }, [])
 
   const hasActiveSOSAlert = localAlerts.some(a => a.priority === "critical" && a.status === "active")
+  const activeAlertData = firebaseAlerts.find(a => a.status === "active")
 
   return (
     <div className="h-full bg-slate-900 flex flex-col overflow-hidden relative">
@@ -406,6 +448,106 @@ export function PoliceDashboard() {
                 </motion.div>
               )}
             </AnimatePresence>
+
+            {/* Dispatch Strategy Section */}
+            <AnimatePresence>
+              {hasActiveSOSAlert && nearestResponderInfo && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className="border border-blue-500/30 rounded-lg overflow-hidden bg-slate-800/60"
+                >
+                  <div className="bg-blue-900/30 px-3 py-2 flex items-center gap-2 border-b border-blue-500/30">
+                    <Navigation className="w-4 h-4 text-blue-400" />
+                    <span className="text-xs font-bold text-blue-400 uppercase tracking-wider">
+                      Dispatch Strategy
+                    </span>
+                  </div>
+                  <div className="p-3 space-y-2">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Nearest Unit:</span>
+                      <span className="font-semibold text-white">{nearestResponderInfo.responder.name}</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Distance:</span>
+                      <span className="font-semibold text-blue-400">{nearestResponderInfo.distance.toFixed(2)} km</span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400">Status:</span>
+                      <span className="text-xs px-2 py-0.5 bg-yellow-500/20 text-yellow-400 rounded animate-pulse">
+                        Dispatched
+                      </span>
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
+            {/* Device Telemetry Section */}
+            <AnimatePresence>
+              {hasActiveSOSAlert && activeAlertData && activeAlertData.batteryLevel !== undefined && (
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  className={cn(
+                    "border rounded-lg overflow-hidden",
+                    activeAlertData.batteryLevel < 0.05 
+                      ? "border-red-500 bg-red-900/30 animate-pulse" 
+                      : "border-slate-500/30 bg-slate-800/60"
+                  )}
+                >
+                  <div className={cn(
+                    "px-3 py-2 flex items-center gap-2 border-b",
+                    activeAlertData.batteryLevel < 0.05 ? "bg-red-900/50 border-red-500/50" : "bg-slate-900/30 border-slate-500/30"
+                  )}>
+                    <Smartphone className={cn("w-4 h-4", activeAlertData.batteryLevel < 0.05 ? "text-red-400" : "text-slate-400")} />
+                    <span className={cn(
+                      "text-xs font-bold uppercase tracking-wider",
+                      activeAlertData.batteryLevel < 0.05 ? "text-red-400" : "text-slate-400"
+                    )}>
+                      Device Telemetry
+                    </span>
+                  </div>
+                  <div className="p-3 space-y-3 font-mono">
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400 flex items-center gap-2">
+                        {activeAlertData.isCharging ? (
+                          <BatteryCharging className="w-4 h-4 text-green-400" />
+                        ) : activeAlertData.batteryLevel < 0.20 ? (
+                          <Battery className="w-4 h-4 text-red-400" />
+                        ) : (
+                          <Battery className="w-4 h-4 text-green-400" />
+                        )}
+                        Battery:
+                      </span>
+                      <span className={cn(
+                        "font-semibold",
+                        activeAlertData.batteryLevel < 0.20 ? "text-red-400" : "text-green-400"
+                      )}>
+                        {Math.round(activeAlertData.batteryLevel * 100)}%
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-sm">
+                      <span className="text-slate-400 flex items-center gap-2">
+                        <Wifi className="w-4 h-4 text-blue-400" />
+                        Signal:
+                      </span>
+                      <span className="font-semibold text-blue-400 uppercase">
+                        {activeAlertData.networkType || "Unknown"}
+                      </span>
+                    </div>
+                    
+                    {activeAlertData.batteryLevel < 0.05 && (
+                      <div className="mt-2 p-2 bg-red-500/20 border border-red-500 rounded text-red-400 text-[10px] uppercase font-bold text-center tracking-widest">
+                        CRITICAL: VICTIM DEVICE DYING - LOCK LAST COORDINATES
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
         </aside>
 
@@ -439,113 +581,45 @@ export function PoliceDashboard() {
             />
           </div>
 
-          {/* Map placeholder */}
+          {/* Live Interactive Map */}
           <div className="flex-1 p-4 pt-0">
             <div className="h-full bg-slate-800/40 border border-slate-700/50 rounded-xl relative overflow-hidden">
-              {/* Grid pattern for map look */}
-              <div className="absolute inset-0 opacity-20">
-                <svg width="100%" height="100%">
-                  <defs>
-                    <pattern
-                      id="grid"
-                      width="50"
-                      height="50"
-                      patternUnits="userSpaceOnUse"
-                    >
-                      <path
-                        d="M 50 0 L 0 0 0 50"
-                        fill="none"
-                        stroke="#475569"
-                        strokeWidth="0.5"
-                      />
-                    </pattern>
-                  </defs>
-                  <rect width="100%" height="100%" fill="url(#grid)" />
-                </svg>
-              </div>
-
-              {/* Map header */}
-              <div className="absolute top-4 left-4 flex items-center gap-2">
+              {/* Map header overlay */}
+              <div className="absolute top-4 left-4 z-[1000] flex items-center gap-2">
                 <span className="px-3 py-1.5 bg-slate-900/80 rounded-lg text-sm text-white font-medium flex items-center gap-2">
                   <MapPin className="w-4 h-4 text-blue-400" />
                   Live Tactical Map
                 </span>
+                <button 
+                  onClick={() => setShowHeatmap(!showHeatmap)}
+                  className={cn(
+                    "px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-2 transition-colors",
+                    showHeatmap ? "bg-red-500/20 text-red-400 border border-red-500/50" : "bg-slate-900/80 text-slate-300 hover:text-white"
+                  )}
+                >
+                  🔥 Toggle Danger Heatmap
+                </button>
               </div>
 
-              {/* GPS Coordinates Display */}
+              {/* GPS Coordinates Display overlay */}
               {currentSOSCoords && (
-                <div className="absolute top-4 right-16 px-3 py-1.5 bg-red-900/80 rounded-lg text-xs text-white font-mono">
+                <div className="absolute top-4 right-4 z-[1000] px-3 py-1.5 bg-red-900/80 rounded-lg text-xs text-white font-mono">
                   LAT: {currentSOSCoords.lat?.toFixed(4) || "N/A"} | LNG: {currentSOSCoords.lng?.toFixed(4) || "N/A"}
                 </div>
               )}
 
-              {/* Zoom controls */}
-              <div className="absolute top-16 right-4 flex flex-col gap-1">
-                <button className="w-8 h-8 bg-slate-900/80 rounded flex items-center justify-center text-white hover:bg-slate-700">
-                  +
-                </button>
-                <button className="w-8 h-8 bg-slate-900/80 rounded flex items-center justify-center text-white hover:bg-slate-700">
-                  -
-                </button>
-              </div>
+              {/* Leaflet Map */}
+              <LiveMap
+                latitude={currentSOSCoords?.lat ?? 28.6139}
+                longitude={currentSOSCoords?.lng ?? 77.2090}
+                responders={RESPONDERS}
+                nearestResponder={nearestResponderInfo?.responder}
+                showHeatmap={showHeatmap}
+                historicalCoords={historicalCoords}
+              />
 
-              {/* Static map markers */}
-              <div className="absolute inset-0 flex items-center justify-center">
-                {/* Normal markers */}
-                <div className="absolute top-1/4 left-1/3">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                </div>
-                <div className="absolute top-1/2 left-1/4">
-                  <div className="w-3 h-3 bg-blue-500 rounded-full" />
-                </div>
-                <div className="absolute bottom-1/3 right-1/3">
-                  <div className="w-3 h-3 bg-green-500 rounded-full" />
-                </div>
-
-                {/* SOS marker - position reacts to live coordinates */}
-                <AnimatePresence>
-                  {hasActiveSOSAlert && currentSOSCoords && (
-                    <motion.div
-                      initial={{ scale: 0, opacity: 0 }}
-                      animate={{ 
-                        scale: 1, 
-                        opacity: 1,
-                        // Simulate map position change based on coordinates
-                        // Map lat/lng to screen position (simplified for demo)
-                        x: ((currentSOSCoords.lng || 0) % 1) * 200 - 100,
-                        y: ((currentSOSCoords.lat || 0) % 1) * 200 - 100,
-                      }}
-                      transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                      className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2"
-                    >
-                      {/* Pulse rings */}
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-20 h-20 bg-red-500/20 rounded-full animate-ping" />
-                      </div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                        <div className="w-12 h-12 bg-red-500/30 rounded-full animate-pulse" />
-                      </div>
-                      {/* Pin */}
-                      <div className="relative flex flex-col items-center">
-                        <div className="w-8 h-8 bg-red-500 rounded-full flex items-center justify-center shadow-lg shadow-red-500/50 ring-4 ring-red-500/30">
-                          <Zap className="w-4 h-4 text-white" />
-                        </div>
-                        <div className="w-0 h-0 border-l-4 border-r-4 border-t-8 border-l-transparent border-r-transparent border-t-red-500" />
-                      </div>
-                      {/* Label */}
-                      <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 whitespace-nowrap">
-                        <span className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded shadow-lg flex items-center gap-1">
-                          <Mic className="w-3 h-3" />
-                          STEALTH SOS - LIVE
-                        </span>
-                      </div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </div>
-
-              {/* Legend */}
-              <div className="absolute bottom-4 left-4 flex items-center gap-4 px-3 py-2 bg-slate-900/80 rounded-lg text-xs">
+              {/* Legend overlay */}
+              <div className="absolute bottom-4 left-4 z-[1000] flex items-center gap-4 px-3 py-2 bg-slate-900/80 rounded-lg text-xs">
                 <span className="flex items-center gap-1.5">
                   <span className="w-2 h-2 bg-blue-500 rounded-full" />
                   <span className="text-slate-300">Units</span>
