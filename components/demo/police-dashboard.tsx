@@ -8,10 +8,10 @@ const LiveMap = dynamic(() => import("@/components/LiveMap"), { ssr: false });
 import {
   Shield,
   MapPin,
-  Radio,
   AlertTriangle,
   PhoneCall,
   Clock,
+  Radio,
   Wifi,
   Volume2,
   User,
@@ -28,12 +28,13 @@ import {
 import { cn } from "@/lib/utils";
 import {
   subscribeToAlerts,
-  fetchAllHistoricalAlerts,
   type SOSAlert,
+  updateSOSStatus,
 } from "@/lib/firebase";
 import {
-  RESPONDERS,
+  FALLBACK_RESPONDERS,
   calculateNearestResponder,
+  loadRespondersFromCsv,
   type Responder,
 } from "@/lib/responders";
 
@@ -83,19 +84,25 @@ function StatCard({
 function AlertCard({
   alert,
   isNew = false,
+  onUpdateStatus,
+  onSelect,
+  isSelected = false,
 }: {
   alert: {
     id: string;
     type: string;
     location: string;
     time: string;
-    status: string;
+    status: "active" | "responding" | "resolved";
     priority: "critical" | "high" | "medium";
     hasAudio?: boolean;
     hasLiveTracking?: boolean;
     evidenceImages?: string[];
   };
   isNew?: boolean;
+  onUpdateStatus?: (id: string, status: "responding" | "resolved") => void;
+  onSelect?: (id: string) => void;
+  isSelected?: boolean;
 }) {
   const priorityStyles = {
     critical: "border-red-500/50 bg-red-500/10",
@@ -113,10 +120,25 @@ function AlertCard({
     <motion.div
       initial={isNew ? { x: -50, opacity: 0 } : false}
       animate={{ x: 0, opacity: 1 }}
+      role={onSelect ? "button" : undefined}
+      tabIndex={onSelect ? 0 : undefined}
+      onClick={onSelect ? () => onSelect(alert.id) : undefined}
+      onKeyDown={
+        onSelect
+          ? (event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                onSelect(alert.id);
+              }
+            }
+          : undefined
+      }
       className={cn(
         "border rounded-lg p-4 transition-all",
         priorityStyles[alert.priority],
         isNew && "ring-2 ring-red-500 animate-pulse",
+        onSelect && "cursor-pointer hover:border-slate-500/80",
+        isSelected && "ring-2 ring-blue-400 border-blue-400/60",
       )}
     >
       <div className="flex items-start justify-between gap-2">
@@ -164,6 +186,24 @@ function AlertCard({
           {alert.status}
         </span>
       </div>
+      {onUpdateStatus && alert.status !== "resolved" && (
+        <div className="mt-3 pt-3 border-t border-slate-700/50 flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onUpdateStatus(alert.id, "responding")}
+            className="text-xs px-2.5 py-1 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 transition"
+          >
+            Mark Responding
+          </button>
+          <button
+            type="button"
+            onClick={() => onUpdateStatus(alert.id, "resolved")}
+            className="text-xs px-2.5 py-1 rounded bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30 transition"
+          >
+            Resolve
+          </button>
+        </div>
+      )}
       {/* Visual Evidence Section */}
       {alert.evidenceImages && alert.evidenceImages.length > 0 && (
         <div className="mt-3 pt-3 border-t border-slate-700/50">
@@ -222,34 +262,101 @@ function getAlertSortTime(alert: { timestamp?: string }) {
   return Number.isNaN(parsed) ? 0 : parsed;
 }
 
+type AlertPriority = "critical" | "high" | "medium";
+
+type DashboardAlert = {
+  id: string;
+  type: string;
+  location: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  address?: string;
+  transcript?: string;
+  batteryLevel?: number;
+  isCharging?: boolean;
+  networkType?: string;
+  timestamp?: string;
+  time: string;
+  status: "active" | "responding" | "resolved";
+  priority: AlertPriority;
+  hasAudio?: boolean;
+  hasLiveTracking?: boolean;
+  evidenceImages?: string[];
+};
+
+function formatAlertKind(value?: string) {
+  if (!value) return "SOS Alert";
+
+  return value
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function deriveAlertType(alert: Partial<SOSAlert>) {
+  if (alert.incidentType) return formatAlertKind(alert.incidentType);
+  if (alert.transcript) return "Silent SOS";
+  if (alert.address || alert.latitude || alert.longitude) return "Live SOS";
+  return "SOS Alert";
+}
+
+function deriveAlertPriority(alert: Partial<SOSAlert>): AlertPriority {
+  const explicitPriority =
+    typeof alert.priority === "string" ? alert.priority.toLowerCase() : "";
+  const explicitThreat =
+    typeof alert.threatLevel === "string"
+      ? alert.threatLevel.toLowerCase()
+      : "";
+
+  if (explicitPriority === "critical" || explicitThreat === "critical") {
+    return "critical";
+  }
+
+  if (explicitPriority === "high" || explicitThreat === "high") {
+    return "high";
+  }
+
+  if (typeof alert.batteryLevel === "number" && alert.batteryLevel <= 0.05) {
+    return "critical";
+  }
+
+  if (typeof alert.batteryLevel === "number" && alert.batteryLevel <= 0.2) {
+    return "high";
+  }
+
+  if (alert.status === "active") {
+    return "high";
+  }
+
+  return "medium";
+}
+
 export function PoliceDashboard() {
   const enableLiveAlerts =
-    process.env.NEXT_PUBLIC_ENABLE_LIVE_ALERTS === "true";
+    process.env.NEXT_PUBLIC_ENABLE_LIVE_ALERTS?.toLowerCase() !== "false";
   const [showFlash, setShowFlash] = useState(false);
   const [showHeatmap, setShowHeatmap] = useState(false);
+  const [responders, setResponders] =
+    useState<Responder[]>(FALLBACK_RESPONDERS);
   const [historicalCoords, setHistoricalCoords] = useState<
     [number, number, number][]
   >([]);
   const [firebaseAlerts, setFirebaseAlerts] = useState<SOSAlert[]>([]);
-  const [localAlerts, setLocalAlerts] = useState(
-    [] as {
-      id: string;
-      type: string;
-      location: string;
-      timestamp?: string;
-      time: string;
-      status: string;
-      priority: "critical" | "high" | "medium";
-      hasAudio?: boolean;
-      hasLiveTracking?: boolean;
-      evidenceImages?: string[];
-    }[],
-  );
+  const [localAlerts, setLocalAlerts] = useState<DashboardAlert[]>([]);
   const processedAlertIds = useRef<Set<string>>(new Set());
   const [currentSOSCoords, setCurrentSOSCoords] = useState<{
     lat: number | null;
     lng: number | null;
   } | null>(null);
+  const [lastActiveCoords, setLastActiveCoords] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const [selectedAlertId, setSelectedAlertId] = useState<string | null>(null);
+  const [selectedResponderId, setSelectedResponderId] = useState<string | null>(
+    null,
+  );
   const [activeTranscript, setActiveTranscript] = useState<string>("");
   const [nearestResponderInfo, setNearestResponderInfo] = useState<{
     responder: Responder;
@@ -262,13 +369,13 @@ export function PoliceDashboard() {
       const nearest = calculateNearestResponder(
         currentSOSCoords.lat,
         currentSOSCoords.lng,
-        RESPONDERS,
+        responders,
       );
       setNearestResponderInfo(nearest);
     } else {
       setNearestResponderInfo(null);
     }
-  }, [currentSOSCoords]);
+  }, [currentSOSCoords, responders]);
 
   // Fetch historical data for heatmap
   useEffect(() => {
@@ -281,6 +388,20 @@ export function PoliceDashboard() {
       });
     }
   }, [showHeatmap, historicalCoords.length]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    loadRespondersFromCsv().then((loadedResponders) => {
+      if (isMounted) {
+        setResponders(loadedResponders);
+      }
+    });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Subscribe to Firebase alerts
   useEffect(() => {
@@ -301,64 +422,70 @@ export function PoliceDashboard() {
           lat: activeAlert.latitude,
           lng: activeAlert.longitude,
         });
-
-        // Update the location string and image in localAlerts for this alert
-        setLocalAlerts((prev) =>
-          prev.map((localAlert) => {
-            if (localAlert.id === activeAlert.id) {
-              return {
-                ...localAlert,
-                location: `GPS: ${activeAlert.latitude!.toFixed(4)}° N, ${activeAlert.longitude!.toFixed(4)}° W`,
-                evidenceImages:
-                  activeAlert.evidenceImages || localAlert.evidenceImages,
-              };
-            }
-            return localAlert;
-          }),
-        );
       }
 
-      // Check for new alerts
+      // Check for new alerts and trigger flash
       alerts.forEach((alert) => {
         if (alert.id && !processedAlertIds.current.has(alert.id)) {
           processedAlertIds.current.add(alert.id);
-
-          // Flash effect for new alert
           setShowFlash(true);
           setTimeout(() => setShowFlash(false), 2000);
+        }
+      });
 
-          // Update current SOS coordinates
-          if (alert.latitude && alert.longitude) {
-            setCurrentSOSCoords({ lat: alert.latitude, lng: alert.longitude });
-          }
-
-          // Update transcript from active alert
-          if (alert.transcript) {
-            setActiveTranscript(alert.transcript);
-          }
-
-          // Create formatted alert for local display
+      const formattedAlerts = alerts
+        .filter((alert) => Boolean(alert.id))
+        .map((alert) => {
           const locationStr =
             alert.latitude && alert.longitude
               ? `GPS: ${alert.latitude.toFixed(4)}° N, ${alert.longitude.toFixed(4)}° W`
               : "GPS: Location unavailable";
 
-          const formattedAlert = {
-            id: alert.id,
-            type: "URGENT: Stealth SOS - Live Audio & GPS Streaming",
+          return {
+            id: alert.id as string,
+            type: deriveAlertType(alert),
             location: locationStr,
+            latitude: alert.latitude,
+            longitude: alert.longitude,
+            address: alert.address,
+            transcript: alert.transcript,
+            batteryLevel: alert.batteryLevel,
+            isCharging: alert.isCharging,
+            networkType: alert.networkType,
             timestamp: alert.timestamp,
             time: formatAlertTime(alert.timestamp),
-            status: "active",
-            priority: "critical" as const,
-            hasAudio: true,
-            hasLiveTracking: true,
+            status: alert.status,
+            priority: deriveAlertPriority(alert),
+            hasAudio: Boolean(alert.transcript),
+            hasLiveTracking: Boolean(alert.latitude && alert.longitude),
             evidenceImages: alert.evidenceImages,
           };
+        });
 
-          setLocalAlerts((prev) => [formattedAlert, ...prev]);
-        }
-      });
+      const latestWithCoords = formattedAlerts.find(
+        (alert) =>
+          alert.latitude !== null &&
+          alert.longitude !== null &&
+          alert.latitude !== undefined &&
+          alert.longitude !== undefined,
+      );
+      const latestActiveWithCoords = formattedAlerts.find(
+        (alert) =>
+          alert.status === "active" &&
+          alert.latitude !== null &&
+          alert.longitude !== null &&
+          alert.latitude !== undefined &&
+          alert.longitude !== undefined,
+      );
+      const coordsSource = latestActiveWithCoords || latestWithCoords;
+      if (coordsSource) {
+        setLastActiveCoords({
+          lat: coordsSource.latitude as number,
+          lng: coordsSource.longitude as number,
+        });
+      }
+
+      setLocalAlerts(formattedAlerts);
     });
 
     return () => unsubscribe();
@@ -367,13 +494,53 @@ export function PoliceDashboard() {
   const sortedAlerts = [...localAlerts].sort(
     (a, b) => getAlertSortTime(b) - getAlertSortTime(a),
   );
-
-  const hasActiveSOSAlert = localAlerts.some(
-    (a) => a.priority === "critical" && a.status === "active",
+  const activeAlerts = sortedAlerts.filter(
+    (alert) => alert.status === "active",
   );
-  const activeAlertData = enableLiveAlerts
-    ? firebaseAlerts.find((a) => a.status === "active")
+
+  const selectedAlert = selectedAlertId
+    ? sortedAlerts.find((alert) => alert.id === selectedAlertId)
     : undefined;
+  const activeAlert = activeAlerts[0];
+  const focusedAlert = selectedAlert ?? activeAlert ?? sortedAlerts[0];
+  const selectedResponderInfo =
+    selectedAlert?.latitude && selectedAlert?.longitude
+      ? calculateNearestResponder(
+          selectedAlert.latitude,
+          selectedAlert.longitude,
+          responders,
+        )
+      : null;
+  const fallbackCoords = responders.length
+    ? { lat: responders[0].latitude, lng: responders[0].longitude }
+    : { lat: 0, lng: 0 };
+  const mapCoords =
+    focusedAlert?.latitude && focusedAlert?.longitude
+      ? { lat: focusedAlert.latitude, lng: focusedAlert.longitude }
+      : activeAlert?.latitude && activeAlert?.longitude
+        ? { lat: activeAlert.latitude, lng: activeAlert.longitude }
+        : lastActiveCoords || fallbackCoords;
+
+  const handleStatusUpdate = async (
+    alertId: string,
+    status: "responding" | "resolved",
+  ) => {
+    setLocalAlerts((prev) =>
+      prev.map((alert) =>
+        alert.id === alertId ? { ...alert, status } : alert,
+      ),
+    );
+
+    if (!enableLiveAlerts) return;
+    try {
+      await updateSOSStatus(alertId, status);
+    } catch (error) {
+      console.error("[Dashboard] Failed to update status:", error);
+    }
+  };
+
+  const hasActiveSOSAlert = activeAlerts.length > 0;
+  const activeAlertData = focusedAlert;
 
   return (
     <div className="h-screen bg-slate-900 flex flex-col overflow-hidden relative">
@@ -402,7 +569,9 @@ export function PoliceDashboard() {
             <div className="px-4 py-2 flex items-center justify-center gap-3">
               <AlertTriangle className="w-5 h-5 animate-pulse" />
               <span className="font-bold text-sm uppercase tracking-wide">
-                Critical SOS Alert - Immediate Response Required
+                {activeAlerts.length} Active SOS Alert
+                {activeAlerts.length > 1 ? "s" : ""} - Immediate Response
+                Required
               </span>
               <div className="flex items-center gap-2 ml-4">
                 <Mic className="w-4 h-4 animate-pulse" />
@@ -460,19 +629,92 @@ export function PoliceDashboard() {
                 Live SOS Alerts
               </h2>
               <span className="text-xs px-2 py-0.5 bg-red-500/20 text-red-400 rounded-full">
-                {localAlerts.length} active
+                {activeAlerts.length} active
               </span>
             </div>
           </div>
 
           <div className="flex-1 overflow-y-auto p-3 space-y-3 min-h-0">
-            {sortedAlerts.map((alert, i) => (
-              <AlertCard
-                key={alert.id}
-                alert={alert}
-                isNew={i === 0 && alert.priority === "critical"}
-              />
-            ))}
+            {sortedAlerts.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-500 text-sm">
+                No active SOS alerts.
+              </div>
+            ) : (
+              sortedAlerts.map((alert, i) => (
+                <AlertCard
+                  key={alert.id}
+                  alert={alert}
+                  isNew={i === 0 && alert.priority === "critical"}
+                  onUpdateStatus={handleStatusUpdate}
+                  onSelect={setSelectedAlertId}
+                  isSelected={alert.id === selectedAlertId}
+                />
+              ))
+            )}
+
+            {selectedAlert && (
+              <div className="border border-slate-700/60 rounded-lg p-3 bg-slate-900/60">
+                <div className="text-xs uppercase text-slate-400 font-semibold tracking-wider">
+                  Selected Alert
+                </div>
+                <div className="mt-2 text-sm text-white font-semibold">
+                  {selectedAlert.type}
+                </div>
+                <div className="mt-1 text-xs text-slate-400">
+                  {selectedAlert.address || selectedAlert.location}
+                </div>
+                <div className="mt-1 text-xs text-slate-500">
+                  Status: {selectedAlert.status} • {selectedAlert.time}
+                </div>
+                {selectedAlert.transcript && (
+                  <div className="mt-2 text-xs text-green-400 font-mono">
+                    {selectedAlert.transcript}
+                  </div>
+                )}
+                {(selectedAlert.batteryLevel !== undefined ||
+                  selectedAlert.networkType) && (
+                  <div className="mt-2 text-[11px] text-slate-400">
+                    Battery:{" "}
+                    {selectedAlert.batteryLevel !== undefined
+                      ? `${Math.round(selectedAlert.batteryLevel * 100)}%`
+                      : "N/A"}
+                    {selectedAlert.networkType
+                      ? ` • ${selectedAlert.networkType.toUpperCase()}`
+                      : ""}
+                  </div>
+                )}
+                {selectedResponderInfo && (
+                  <div className="mt-3 pt-3 border-t border-slate-700/50 space-y-1 text-[11px] text-slate-300">
+                    <div className="text-xs uppercase text-slate-400 font-semibold tracking-wider">
+                      Nearest Station
+                    </div>
+                    <div className="font-semibold text-white">
+                      {selectedResponderInfo.responder.name}
+                    </div>
+                    {selectedResponderInfo.responder.address && (
+                      <div>{selectedResponderInfo.responder.address}</div>
+                    )}
+                    {selectedResponderInfo.responder.phone && (
+                      <div>Phone: {selectedResponderInfo.responder.phone}</div>
+                    )}
+                    {(selectedResponderInfo.responder.division ||
+                      selectedResponderInfo.responder.section) && (
+                      <div className="text-slate-400">
+                        {selectedResponderInfo.responder.division || ""}
+                        {selectedResponderInfo.responder.division &&
+                        selectedResponderInfo.responder.section
+                          ? " • "
+                          : ""}
+                        {selectedResponderInfo.responder.section || ""}
+                      </div>
+                    )}
+                    <div className="text-slate-500">
+                      Distance: {selectedResponderInfo.distance.toFixed(2)} km
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Live Audio Transcript Terminal Box */}
             <AnimatePresence>
@@ -650,25 +892,25 @@ export function PoliceDashboard() {
             <StatCard
               icon={PhoneCall}
               label="Active Calls"
-              value={hasActiveSOSAlert ? 3 : 2}
+              value={activeAlerts.length}
               color="text-red-400"
             />
             <StatCard
               icon={Navigation}
               label="Units Deployed"
-              value={7}
+              value={responders.length}
               color="text-blue-400"
             />
             <StatCard
               icon={Clock}
               label="Avg Response"
-              value="4.2m"
+              value={hasActiveSOSAlert ? "Live" : "Idle"}
               color="text-green-400"
             />
             <StatCard
               icon={Activity}
               label="System Health"
-              value="98%"
+              value={enableLiveAlerts ? "Online" : "Offline"}
               color="text-emerald-400"
             />
           </div>
@@ -705,12 +947,19 @@ export function PoliceDashboard() {
 
               {/* Leaflet Map */}
               <LiveMap
-                latitude={currentSOSCoords?.lat ?? 28.6139}
-                longitude={currentSOSCoords?.lng ?? 77.209}
-                responders={RESPONDERS}
-                nearestResponder={nearestResponderInfo?.responder}
+                latitude={mapCoords.lat}
+                longitude={mapCoords.lng}
+                responders={responders}
+                nearestResponder={
+                  selectedAlert
+                    ? (nearestResponderInfo?.responder ?? null)
+                    : null
+                }
+                selectedResponderId={selectedResponderId}
+                onResponderSelect={setSelectedResponderId}
                 showHeatmap={showHeatmap}
                 historicalCoords={historicalCoords}
+                showMarker={Boolean(selectedAlert)}
               />
 
               {/* Legend overlay */}

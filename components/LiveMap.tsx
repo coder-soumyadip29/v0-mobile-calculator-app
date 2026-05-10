@@ -57,8 +57,11 @@ interface LiveMapProps {
   longitude: number;
   responders?: Responder[];
   nearestResponder?: Responder | null;
+  selectedResponderId?: string | null;
+  onResponderSelect?: (responderId: string) => void;
   showHeatmap?: boolean;
   historicalCoords?: [number, number, number][];
+  showMarker?: boolean;
 }
 
 export default function LiveMap({
@@ -66,8 +69,11 @@ export default function LiveMap({
   longitude,
   responders,
   nearestResponder,
+  selectedResponderId,
+  onResponderSelect,
   showHeatmap,
   historicalCoords,
+  showMarker = true,
 }: LiveMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
@@ -135,17 +141,30 @@ export default function LiveMap({
     }
 
     responders.forEach((r) => {
-      const icon = r.type === "police" ? blueIcon : greenIcon;
-      L.marker([r.latitude, r.longitude], { icon })
+      const isSelected = r.id === selectedResponderId;
+      const layer = isSelected
+        ? L.marker([r.latitude, r.longitude], { icon: blueIcon })
+        : L.circleMarker([r.latitude, r.longitude], {
+            radius: 8,
+            color: "#3B82F6",
+            weight: 2,
+            fillColor: "#3B82F6",
+            fillOpacity: 0.6,
+            opacity: 0.9,
+            interactive: true,
+          });
+
+      layer
         .bindPopup(
           `<div style="font-family: sans-serif; padding: 4px;">
              <strong>${r.name}</strong><br/>
              <span style="color: #6b7280; font-size: 12px;">${r.type === "police" ? "Police Station" : "Hospital"}</span>
            </div>`,
         )
+        .on("click", () => onResponderSelect?.(r.id))
         .addTo(respondersLayerRef.current!);
     });
-  }, [responders, isReady]);
+  }, [responders, isReady, selectedResponderId, onResponderSelect]);
 
   // ── Update marker position, polyline and recenter when coordinates change ────────
   useEffect(() => {
@@ -155,8 +174,9 @@ export default function LiveMap({
     markerRef.current.setPopupContent(
       buildPopupContent(latitude, longitude, address),
     );
+    markerRef.current.setOpacity(showMarker ? 1 : 0);
 
-    if (nearestResponder) {
+    if (showMarker && nearestResponder) {
       const lineCoords: L.LatLngTuple[] = [
         [latitude, longitude],
         [nearestResponder.latitude, nearestResponder.longitude],
@@ -180,7 +200,7 @@ export default function LiveMap({
     mapRef.current.flyTo([latitude, longitude], mapRef.current.getZoom(), {
       duration: 1.5,
     });
-  }, [latitude, longitude, address, nearestResponder, isReady]);
+  }, [latitude, longitude, address, nearestResponder, isReady, showMarker]);
 
   // ── Heatmap logic ────────────────────────────────────────────────────────
   useEffect(() => {
