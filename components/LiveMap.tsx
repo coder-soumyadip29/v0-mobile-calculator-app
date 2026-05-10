@@ -142,19 +142,40 @@ export default function LiveMap({
 
     responders.forEach((r) => {
       const isSelected = r.id === selectedResponderId;
-      const layer = isSelected
-        ? L.marker([r.latitude, r.longitude], { icon: blueIcon })
-        : L.circleMarker([r.latitude, r.longitude], {
-            radius: 8,
-            color: "#3B82F6",
-            weight: 2,
-            fillColor: "#3B82F6",
-            fillOpacity: 0.6,
-            opacity: 0.9,
-            interactive: true,
-          });
 
-      layer
+      if (isSelected) {
+        L.marker([r.latitude, r.longitude], { icon: blueIcon })
+          .bindPopup(
+            `<div style="font-family: sans-serif; padding: 4px;">
+               <strong>${r.name}</strong><br/>
+               <span style="color: #6b7280; font-size: 12px;">${r.type === "police" ? "Police Station" : "Hospital"}</span>
+             </div>`,
+          )
+          .on("click", () => onResponderSelect?.(r.id))
+          .addTo(respondersLayerRef.current!);
+        return;
+      }
+
+      const hitTarget = L.circleMarker([r.latitude, r.longitude], {
+        radius: 12,
+        color: "#3B82F6",
+        weight: 0,
+        fillOpacity: 0,
+        opacity: 0,
+        interactive: true,
+      });
+
+      const visibleDot = L.circleMarker([r.latitude, r.longitude], {
+        radius: 4,
+        color: "#3B82F6",
+        weight: 1,
+        fillColor: "#3B82F6",
+        fillOpacity: 0.9,
+        opacity: 0.9,
+        interactive: false,
+      });
+
+      hitTarget
         .bindPopup(
           `<div style="font-family: sans-serif; padding: 4px;">
              <strong>${r.name}</strong><br/>
@@ -163,6 +184,8 @@ export default function LiveMap({
         )
         .on("click", () => onResponderSelect?.(r.id))
         .addTo(respondersLayerRef.current!);
+
+      visibleDot.addTo(respondersLayerRef.current!);
     });
   }, [responders, isReady, selectedResponderId, onResponderSelect]);
 
